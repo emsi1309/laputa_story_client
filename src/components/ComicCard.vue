@@ -1,7 +1,7 @@
 <template>
   <article class="comic-card qq-card">
     <router-link :to="`/comic/${comic.slug}`" class="cover-wrap qq-cover-wrap">
-      <img :src="comic.coverUrl || fallbackCover" :alt="comic.title" loading="lazy" />
+      <img :src="coverSource" :alt="comic.title" loading="lazy" />
       <div class="qq-card-badges">
         <span class="qq-badge qq-badge-time">{{ timeAgo }}</span>
         <span class="qq-badge qq-badge-hot" v-if="comic.followCount > 0">Hot</span>
@@ -24,11 +24,14 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { resolvePublicImageUrl } from "../lib/image";
 import type { ComicCard } from "../types";
 
 const props = defineProps<{
   comic: ComicCard;
 }>();
+
+const coverSource = computed(() => resolvePublicImageUrl(props.comic.coverUrl) || fallbackCover);
 
 const timeAgo = computed(() => {
   const timestamp = props.comic.updatedAt;

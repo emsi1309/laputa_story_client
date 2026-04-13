@@ -14,7 +14,7 @@
             :to="`/comic/${item.slug}`"
             class="library-item"
           >
-            <img :src="item.coverUrl || fallbackCover" :alt="item.title" loading="lazy" />
+            <img :src="resolveCover(item.coverUrl)" :alt="item.title" loading="lazy" />
             <div>
               <strong>{{ item.title }}</strong>
               <p>{{ item.author || "Đang cập nhật" }}</p>
@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import api from "../lib/api";
+import { resolvePublicImageUrl } from "../lib/image";
 
 type FollowItem = {
   comicId: number;
@@ -74,6 +75,8 @@ const follows = ref<FollowItem[]>([]);
 const history = ref<HistoryItem[]>([]);
 
 const fallbackCover = "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
+
+const resolveCover = (coverUrl: string | null) => resolvePublicImageUrl(coverUrl) || fallbackCover;
 
 const load = async () => {
   const [followRes, historyRes] = await Promise.all([

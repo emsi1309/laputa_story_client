@@ -1,7 +1,7 @@
 <template>
   <section class="container section-block" v-if="detail">
     <div class="detail-layout">
-      <img class="detail-cover" :src="detail.coverUrl || fallbackCover" :alt="detail.title" />
+      <img class="detail-cover" :src="detailCoverSource" :alt="detail.title" />
 
       <div>
         <h1 class="detail-title">{{ detail.title }}</h1>
@@ -57,6 +57,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { resolvePublicImageUrl } from "../lib/image";
 import { useAuthStore } from "../stores/auth";
 import type { ComicDetail } from "../types";
 
@@ -71,6 +72,8 @@ const followCount = ref(0);
 
 const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
+
+const detailCoverSource = computed(() => resolvePublicImageUrl(detail.value?.coverUrl) || fallbackCover);
 
 const displayedChapters = computed(() => {
   if (!detail.value) {
