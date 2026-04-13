@@ -106,6 +106,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { getApiBaseUrl } from "../lib/runtimeConfig";
 import { useAuthStore } from "../stores/auth";
 import type { ChapterBrief, ComicDetail, ReaderData } from "../types";
 
@@ -119,7 +120,7 @@ const selectedChapterSlug = ref("");
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, boolean>>({});
 let syncTimer: number | null = null;
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/$/, "");
+const API_BASE_URL = getApiBaseUrl();
 
 const storageKey = computed(
   () => `reader:${String(route.params.comicSlug)}:${String(route.params.chapterSlug)}`
