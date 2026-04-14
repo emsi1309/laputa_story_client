@@ -231,6 +231,12 @@ const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
+const HEADER_SCROLL_DELTA = 14;
+const HEADER_TOP_VISIBLE_THRESHOLD = 24;
+const HEADER_TOGGLE_SETTLE_MS = 220;
+const lastScrollY = ref(0);
+const isReaderHeaderVisible = ref(true);
+const headerAutoPauseUntil = ref(0);
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -239,6 +245,21 @@ type ThreadedCommentItem = CommentItem & {
 const toTimestamp = (value: string) => {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
+};
+
+const emitReaderHeaderVisibility = (visible: boolean) => {
+  window.dispatchEvent(new CustomEvent("reader-header-visibility", { detail: { visible } }));
+};
+
+const setReaderHeaderVisibility = (visible: boolean, force = false) => {
+  if (!force && isReaderHeaderVisible.value === visible) {
+    return;
+  }
+
+  isReaderHeaderVisible.value = visible;
+  headerAutoPauseUntil.value = performance.now() + HEADER_TOGGLE_SETTLE_MS;
+  lastScrollY.value = window.scrollY;
+  emitReaderHeaderVisibility(visible);
 };
 
 const threadedChapterComments = computed<ThreadedCommentItem[]>(() => {
@@ -830,6 +851,20 @@ const scrollToBottom = () => {
 };
 
 const updateCurrentPageByScroll = () => {
+  const currentY = window.scrollY;
+  const now = performance.now();
+  const delta = currentY - lastScrollY.value;
+
+  if (now >= headerAutoPauseUntil.value) {
+    if (currentY <= HEADER_TOP_VISIBLE_THRESHOLD) {
+      setReaderHeaderVisibility(true);
+    } else if (Math.abs(delta) >= HEADER_SCROLL_DELTA) {
+      setReaderHeaderVisibility(delta < 0);
+    }
+  }
+
+  lastScrollY.value = currentY;
+
   const nodes = Array.from(document.querySelectorAll<HTMLElement>(".reader-page"));
   if (!nodes.length) {
     return;
@@ -887,23 +922,67 @@ const loadReader = async () => {
 
   imageFallbackMap.value = {};
   await restoreSavedPage();
+  lastScrollY.value = window.scrollY;
+  setReaderHeaderVisibility(true, true);
+};
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+};
+
+const handleReaderKeydown = (event: KeyboardEvent) => {
+  if (!readerData.value) {
+    return;
+  }
+
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    setReaderHeaderVisibility(false);
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    setReaderHeaderVisibility(true);
+  }
 };
 
 watch(
   () => [route.params.comicSlug, route.params.chapterSlug],
   async () => {
+    setReaderHeaderVisibility(true, true);
+    lastScrollY.value = 0;
     window.scrollTo({ top: 0 });
     await loadReader();
   }
 );
 
 onMounted(async () => {
+  setReaderHeaderVisibility(true, true);
   await loadReader();
+  lastScrollY.value = window.scrollY;
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
+  window.addEventListener("keydown", handleReaderKeydown);
 });
 
 onBeforeUnmount(() => {
+  setReaderHeaderVisibility(true, true);
   window.removeEventListener("scroll", updateCurrentPageByScroll);
+  window.removeEventListener("keydown", handleReaderKeydown);
   if (syncTimer) {
     window.clearTimeout(syncTimer);
   }
