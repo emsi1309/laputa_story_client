@@ -866,7 +866,8 @@ a {
 .reader-scroll-controls {
   position: fixed;
   right: 18px;
-  bottom: 20px;
+  top: 50%;
+  transform: translateY(-50%);
   display: grid;
   gap: 10px;
   z-index: 48;
@@ -1303,6 +1304,6 @@ a {
 
   .reader-scroll-controls {
     right: 12px;
-    bottom: 14px;
+    top: 50%;
   }
 }

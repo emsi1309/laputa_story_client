@@ -951,6 +951,22 @@ const handleReaderKeydown = (event: KeyboardEvent) => {
     return;
   }
 
+  if (event.key === "ArrowRight") {
+    if (readerData.value.nextChapter) {
+      event.preventDefault();
+      void goToChapterBySwipe(readerData.value.nextChapter.slug);
+    }
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    if (readerData.value.prevChapter) {
+      event.preventDefault();
+      void goToChapterBySwipe(readerData.value.prevChapter.slug);
+    }
+    return;
+  }
+
   if (event.key === "ArrowDown") {
     setReaderHeaderVisibility(false);
     return;
