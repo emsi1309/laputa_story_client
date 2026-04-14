@@ -59,7 +59,7 @@
           loading="lazy"
           decoding="async"
           referrerpolicy="no-referrer"
-          @error="markImageAsBlocked(page.id)"
+          @error="markImageAsBlocked(page.id, page.imageUrl)"
         />
       </figure>
     </div>
@@ -210,6 +210,7 @@ const chapterOptions = ref<ChapterBrief[]>([]);
 const selectedChapterSlug = ref("");
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, boolean>>({});
+const blockedImageHosts = ref<Set<string>>(new Set());
 const swipeStartX = ref<number | null>(null);
 const swipeStartY = ref<number | null>(null);
 const swipeStartAt = ref(0);
@@ -226,9 +227,11 @@ let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
 const READER_CACHE_PREFIX = "reader_cache:";
 const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
+const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
+const MAX_BLOCKED_IMAGE_HOSTS = 40;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -520,6 +523,69 @@ const saveProgress = (pageIndex: number) => {
   }, 700);
 };
 
+const parseExternalImageHost = (rawUrl: string) => {
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:") {
+      return null;
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    const currentHost = window.location.hostname.toLowerCase();
+    if (!host || host === currentHost) {
+      return null;
+    }
+
+    return host;
+  } catch {
+    return null;
+  }
+};
+
+const readBlockedImageHosts = () => {
+  try {
+    const raw = localStorage.getItem(BLOCKED_IMAGE_HOSTS_KEY);
+    if (!raw) {
+      return new Set<string>();
+    }
+
+    const parsed = JSON.parse(raw) as string[];
+    if (!Array.isArray(parsed)) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      parsed
+        .filter((item) => typeof item === "string")
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item.length > 0)
+        .slice(-MAX_BLOCKED_IMAGE_HOSTS)
+    );
+  } catch {
+    return new Set<string>();
+  }
+};
+
+const persistBlockedImageHosts = (hosts: Set<string>) => {
+  try {
+    localStorage.setItem(BLOCKED_IMAGE_HOSTS_KEY, JSON.stringify(Array.from(hosts).slice(-MAX_BLOCKED_IMAGE_HOSTS)));
+  } catch {
+  }
+};
+
+const registerBlockedImageHost = (rawUrl: string) => {
+  const host = parseExternalImageHost(rawUrl);
+  if (!host || blockedImageHosts.value.has(host)) {
+    return;
+  }
+
+  const next = new Set(blockedImageHosts.value);
+  next.add(host);
+  blockedImageHosts.value = next;
+  persistBlockedImageHosts(next);
+};
+
 const resolveImageSource = (page: ReaderData["pages"][number]) => {
   if (shouldUseProxyByDefault(page.imageUrl) || imageFallbackMap.value[page.id]) {
     return `${API_BASE_URL}/api/public/image-proxy?url=${encodeURIComponent(page.imageUrl)}`;
@@ -528,24 +594,21 @@ const resolveImageSource = (page: ReaderData["pages"][number]) => {
 };
 
 const shouldUseProxyByDefault = (rawUrl: string) => {
-  try {
-    const parsed = new URL(rawUrl, window.location.origin);
-    const protocol = parsed.protocol.toLowerCase();
-    if (protocol !== "http:" && protocol !== "https:") {
-      return false;
-    }
-
-    const currentHost = window.location.hostname.toLowerCase();
-    return parsed.hostname.toLowerCase() !== currentHost;
-  } catch {
+  const host = parseExternalImageHost(rawUrl);
+  if (!host) {
     return false;
   }
+
+  return blockedImageHosts.value.has(host);
 };
 
-const markImageAsBlocked = (pageId: number) => {
+const markImageAsBlocked = (pageId: number, rawUrl: string) => {
   if (imageFallbackMap.value[pageId]) {
     return;
   }
+
+  registerBlockedImageHost(rawUrl);
+
   imageFallbackMap.value = {
     ...imageFallbackMap.value,
     [pageId]: true,
@@ -989,6 +1052,7 @@ watch(
 
 onMounted(async () => {
   setReaderHeaderVisibility(true, true);
+  blockedImageHosts.value = readBlockedImageHosts();
   await loadReader();
   lastScrollY.value = window.scrollY;
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
