@@ -6,6 +6,7 @@
       <div>
         <h1 class="detail-title">{{ detail.title }}</h1>
         <p class="detail-meta">Tác giả: {{ detail.author || "Đang cập nhật" }} · {{ detail.status }}</p>
+        <p class="detail-meta">Lượt xem: {{ formatCount(detail.viewCount) }}</p>
         <p class="detail-meta">Lượt theo dõi: {{ followCount }}</p>
 
         <div class="chip-row">
@@ -46,7 +47,12 @@
         :to="`/read/${detail.slug}/${chapter.slug}`"
         class="chapter-item"
       >
-        <span>{{ chapter.title }}</span>
+        <div class="chapter-item-main">
+          <span>{{ chapter.title }}</span>
+          <span class="chapter-item-meta">
+            {{ formatPublishedAt(chapter.publishedAt) }} · {{ formatCount(chapter.viewCount) }} lượt xem
+          </span>
+        </div>
         <span>#{{ chapter.number ?? chapter.sortIndex }}</span>
       </router-link>
     </div>
@@ -74,6 +80,27 @@ const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
 
 const detailCoverSource = computed(() => resolvePublicImageUrl(detail.value?.coverUrl) || fallbackCover);
+
+const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
+
+const formatPublishedAt = (value: string | null) => {
+  if (!value) {
+    return "Chưa cập nhật thời gian";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+};
 
 const displayedChapters = computed(() => {
   if (!detail.value) {

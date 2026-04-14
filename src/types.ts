@@ -11,6 +11,7 @@ export type ChapterBrief = {
   number: number | null;
   sortIndex: number;
   publishedAt: string | null;
+  viewCount: number;
 };
 
 export type ComicCard = {
@@ -21,6 +22,7 @@ export type ComicCard = {
   status: string;
   coverUrl: string | null;
   updatedAt: string;
+  viewCount: number;
   followCount: number;
   genres: GenreItem[];
   latestChapter: ChapterBrief | null;
@@ -35,6 +37,7 @@ export type ComicDetail = {
   status: string;
   coverUrl: string | null;
   updatedAt: string;
+  viewCount: number;
   followCount: number;
   genres: GenreItem[];
   chapters: ChapterBrief[];
@@ -52,6 +55,8 @@ export type ReaderData = {
     slug: string;
     number: number | null;
     sortIndex: number;
+    publishedAt: string | null;
+    viewCount: number;
   };
   pages: {
     id: number;

@@ -5,6 +5,7 @@
         <router-link :to="`/comic/${readerData.comic.slug}`" class="back-link">← Về chi tiết</router-link>
         <h1>{{ readerData.comic.title }}</h1>
         <p>{{ readerData.chapter.title }} · Trang {{ currentPage }}/{{ readerData.pages.length }}</p>
+        <p>{{ formatPublishedAt(readerData.chapter.publishedAt) }} · {{ formatCount(readerData.chapter.viewCount) }} lượt xem</p>
         <div class="reader-jump-wrap" v-if="chapterOptions.length">
           <label for="reader-chapter-select">Nhảy chương:</label>
           <select
@@ -128,12 +129,189 @@ const swipeStartX = ref<number | null>(null);
 const swipeStartY = ref<number | null>(null);
 const swipeStartAt = ref(0);
 const swipeRouteLock = ref(false);
+const chapterOptionsComicSlug = ref<string | null>(null);
 let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
+const READER_CACHE_PREFIX = "reader_cache:";
+const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
+const READER_CACHE_TTL_MS = 30 * 60 * 1000;
+const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
+const MAX_LOCAL_CHAPTER_ITEMS = 30;
+
+const formatCount = (value: number | null | undefined) => new Intl.NumberFormat("vi-VN").format(value || 0);
+
+const formatPublishedAt = (value: string | null | undefined) => {
+  if (!value) {
+    return "Chưa cập nhật thời gian";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+};
 
 const storageKey = computed(
   () => `reader:${String(route.params.comicSlug)}:${String(route.params.chapterSlug)}`
 );
+
+const getReaderCacheKey = (comicSlug: string, chapterSlug: string) =>
+  `${READER_CACHE_PREFIX}${comicSlug}:${chapterSlug}`;
+
+const getViewedChapterKey = (comicSlug: string, chapterSlug: string) =>
+  `${VIEWED_CHAPTER_PREFIX}${comicSlug}:${chapterSlug}`;
+
+const pruneReaderCacheStorage = () => {
+  const now = Date.now();
+  const keys: string[] = [];
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key && key.startsWith(READER_CACHE_PREFIX)) {
+      keys.push(key);
+    }
+  }
+
+  const entries: Array<{ key: string; savedAt: number }> = [];
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      localStorage.removeItem(key);
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as { savedAt?: number };
+      const savedAt = Number(parsed.savedAt);
+      if (!savedAt || Number.isNaN(savedAt) || now - savedAt > READER_CACHE_TTL_MS) {
+        localStorage.removeItem(key);
+        continue;
+      }
+      entries.push({ key, savedAt });
+    } catch {
+      localStorage.removeItem(key);
+    }
+  }
+
+  if (entries.length <= MAX_LOCAL_CHAPTER_ITEMS) {
+    return;
+  }
+
+  entries.sort((a, b) => b.savedAt - a.savedAt);
+  for (const entry of entries.slice(MAX_LOCAL_CHAPTER_ITEMS)) {
+    localStorage.removeItem(entry.key);
+  }
+};
+
+const pruneViewedChapterStorage = () => {
+  const now = Date.now();
+  const keys: string[] = [];
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key && key.startsWith(VIEWED_CHAPTER_PREFIX)) {
+      keys.push(key);
+    }
+  }
+
+  const entries: Array<{ key: string; viewedAt: number }> = [];
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    const viewedAt = raw ? Number(raw) : 0;
+    if (!viewedAt || Number.isNaN(viewedAt) || now - viewedAt > VIEWED_CHAPTER_TTL_MS) {
+      localStorage.removeItem(key);
+      continue;
+    }
+    entries.push({ key, viewedAt });
+  }
+
+  if (entries.length <= MAX_LOCAL_CHAPTER_ITEMS) {
+    return;
+  }
+
+  entries.sort((a, b) => b.viewedAt - a.viewedAt);
+  for (const entry of entries.slice(MAX_LOCAL_CHAPTER_ITEMS)) {
+    localStorage.removeItem(entry.key);
+  }
+};
+
+const readCachedReader = (comicSlug: string, chapterSlug: string) => {
+  const cacheKey = getReaderCacheKey(comicSlug, chapterSlug);
+  const raw = localStorage.getItem(cacheKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { savedAt?: number; data?: ReaderData };
+    if (!parsed || !parsed.savedAt || !parsed.data) {
+      localStorage.removeItem(cacheKey);
+      return null;
+    }
+
+    if (Date.now() - parsed.savedAt > READER_CACHE_TTL_MS) {
+      localStorage.removeItem(cacheKey);
+      return null;
+    }
+
+    return parsed.data;
+  } catch {
+    localStorage.removeItem(cacheKey);
+    return null;
+  }
+};
+
+const saveCachedReader = (comicSlug: string, chapterSlug: string, data: ReaderData) => {
+  const cacheKey = getReaderCacheKey(comicSlug, chapterSlug);
+  localStorage.setItem(
+    cacheKey,
+    JSON.stringify({
+      savedAt: Date.now(),
+      data,
+    })
+  );
+  pruneReaderCacheStorage();
+};
+
+const shouldRequestReaderApi = (comicSlug: string, chapterSlug: string) => {
+  pruneViewedChapterStorage();
+
+  const viewedKey = getViewedChapterKey(comicSlug, chapterSlug);
+  const lastViewRaw = localStorage.getItem(viewedKey);
+  const lastView = lastViewRaw ? Number(lastViewRaw) : 0;
+  const now = Date.now();
+
+  if (!lastView || Number.isNaN(lastView) || now - lastView > VIEWED_CHAPTER_TTL_MS) {
+    localStorage.setItem(viewedKey, String(now));
+    pruneViewedChapterStorage();
+    return true;
+  }
+
+  return false;
+};
+
+const loadChapterOptions = async (comicSlug: string) => {
+  if (chapterOptionsComicSlug.value === comicSlug && chapterOptions.value.length) {
+    return;
+  }
+
+  try {
+    const detailResponse = await api.get<ComicDetail>(`/api/public/comics/${comicSlug}`);
+    chapterOptions.value = detailResponse.data.chapters || [];
+    chapterOptionsComicSlug.value = comicSlug;
+  } catch {
+    chapterOptions.value = [];
+    chapterOptionsComicSlug.value = null;
+  }
+};
 
 const saveProgress = (pageIndex: number) => {
   localStorage.setItem(storageKey.value, String(pageIndex));
@@ -345,18 +523,25 @@ const restoreSavedPage = async () => {
 };
 
 const loadReader = async () => {
-  const { data } = await api.get<ReaderData>(
-    `/api/public/read/${route.params.comicSlug}/${route.params.chapterSlug}`
-  );
+  const comicSlug = String(route.params.comicSlug);
+  const chapterSlug = String(route.params.chapterSlug);
+  const shouldCallApi = shouldRequestReaderApi(comicSlug, chapterSlug);
+
+  let data: ReaderData | null = null;
+  if (!shouldCallApi) {
+    data = readCachedReader(comicSlug, chapterSlug);
+  }
+
+  if (!data) {
+    const response = await api.get<ReaderData>(`/api/public/read/${comicSlug}/${chapterSlug}`);
+    data = response.data;
+    saveCachedReader(comicSlug, chapterSlug, data);
+  }
+
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
 
-  try {
-    const detailResponse = await api.get<ComicDetail>(`/api/public/comics/${route.params.comicSlug}`);
-    chapterOptions.value = detailResponse.data.chapters || [];
-  } catch {
-    chapterOptions.value = [];
-  }
+  await loadChapterOptions(data.comic.slug);
 
   imageFallbackMap.value = {};
   await restoreSavedPage();

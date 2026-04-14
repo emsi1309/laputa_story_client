@@ -17,7 +17,7 @@
       >
         Chương {{ comic.latestChapter.number ?? comic.latestChapter.sortIndex }}
       </router-link>
-      <span class="qq-card-follow">Theo dõi {{ comic.followCount }}</span>
+      <span class="qq-card-follow">Lượt xem {{ formatCount(comic.viewCount) }} · Theo dõi {{ formatCount(comic.followCount) }}</span>
     </div>
   </article>
 </template>
@@ -32,6 +32,8 @@ const props = defineProps<{
 }>();
 
 const coverSource = computed(() => resolvePublicImageUrl(props.comic.coverUrl) || fallbackCover);
+
+const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
 
 const timeAgo = computed(() => {
   const timestamp = props.comic.updatedAt;

@@ -583,8 +583,25 @@ a {
 .chapter-item {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   padding: 12px 14px;
   border-top: 1px solid #222a3c;
+}
+
+.chapter-item-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chapter-item-main > span:first-child {
+  color: #e2e8f0;
+}
+
+.chapter-item-meta {
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .chapter-item:first-child {
