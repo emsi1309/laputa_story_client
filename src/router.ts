@@ -8,6 +8,7 @@ import ReaderView from "./views/ReaderView.vue";
 import LoginView from "./views/LoginView.vue";
 import RegisterView from "./views/RegisterView.vue";
 import LibraryView from "./views/LibraryView.vue";
+import ProfileView from "./views/ProfileView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -21,6 +22,7 @@ const router = createRouter({
         { path: "comic/:slug", name: "comic-detail", component: ComicDetailView },
         { path: "read/:comicSlug/:chapterSlug", name: "reader", component: ReaderView },
         { path: "library", name: "library", component: LibraryView, meta: { requiresAuth: true } },
+        { path: "profile", name: "profile", component: ProfileView, meta: { requiresAuth: true } },
       ],
     },
     { path: "/login", name: "login", component: LoginView, meta: { guestOnly: true } },

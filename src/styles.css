@@ -1021,6 +1021,50 @@ a {
   width: 100%;
 }
 
+.profile-card {
+  margin-top: 10px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+
+.profile-meta {
+  border: 1px solid #273047;
+  border-radius: 10px;
+  background: #111827;
+  padding: 12px;
+}
+
+.profile-meta h3 {
+  margin: 0 0 10px;
+}
+
+.profile-meta p {
+  margin: 0 0 8px;
+  color: #cbd5e1;
+}
+
+.profile-form {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-form label {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.profile-form input {
+  background: #111827;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px;
+}
+
 .comment-composer {
   display: grid;
   gap: 8px;
@@ -1142,6 +1186,10 @@ a {
   .qq-top-inner {
     grid-template-columns: 1fr;
     padding: 10px 0;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
   }
 
   .qq-brand {

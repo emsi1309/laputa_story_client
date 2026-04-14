@@ -44,6 +44,7 @@
               <p class="qq-noti-empty" v-else>Chưa có thông báo nào.</p>
             </div>
           </div>
+          <router-link to="/profile" class="qq-auth-btn">{{ auth.user?.displayName || "Hồ sơ" }}</router-link>
           <router-link to="/library" class="qq-auth-btn">Theo dõi</router-link>
           <router-link to="/library" class="qq-auth-btn">Yêu thích</router-link>
           <button class="qq-auth-btn" @click="logout">Đăng xuất</button>

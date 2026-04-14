@@ -206,6 +206,7 @@ const READER_CACHE_TTL_MS = 30 * 60 * 1000;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
+const REPORT_COOLDOWN_MS = 60 * 1000;
 
 const formatCount = (value: number | null | undefined) => new Intl.NumberFormat("vi-VN").format(value || 0);
 
@@ -575,15 +576,28 @@ const submitChapterReport = async () => {
     return;
   }
 
-  await api.post("/api/user/reports", {
-    comicId: readerData.value.comic.id,
-    chapterId: readerData.value.chapter.id,
-    reason: chapterReportReason.value,
-    details: chapterReportDetails.value.trim() || undefined,
-  });
+  const cooldownKey = `report_cooldown:chapter:${readerData.value.comic.id}:${readerData.value.chapter.id}:user:${auth.user?.id ?? "me"}`;
+  const now = Date.now();
+  const lastReportAt = Number(localStorage.getItem(cooldownKey) || "0");
+  if (lastReportAt && now - lastReportAt < REPORT_COOLDOWN_MS) {
+    readerNotice.value = "Bạn vừa gửi báo cáo. Vui lòng chờ 1 phút rồi thử lại.";
+    return;
+  }
 
-  chapterReportDetails.value = "";
-  readerNotice.value = "Đã gửi báo cáo chương.";
+  try {
+    await api.post("/api/user/reports", {
+      comicId: readerData.value.comic.id,
+      chapterId: readerData.value.chapter.id,
+      reason: chapterReportReason.value,
+      details: chapterReportDetails.value.trim() || undefined,
+    });
+
+    localStorage.setItem(cooldownKey, String(now));
+    chapterReportDetails.value = "";
+    readerNotice.value = "Đã gửi báo cáo chương.";
+  } catch (error: any) {
+    readerNotice.value = error?.response?.data?.message || "Không thể gửi báo cáo chương lúc này.";
+  }
 };
 
 const isInteractiveTouchTarget = (target: EventTarget | null) => {

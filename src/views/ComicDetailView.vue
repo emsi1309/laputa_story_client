@@ -191,6 +191,8 @@ const descriptionExpanded = ref(false);
 const activeToolPanel = ref<"rating" | "report" | null>(null);
 
 const COMMENT_COOLDOWN_MS = 60 * 1000;
+const RATING_COOLDOWN_MS = 60 * 1000;
+const REPORT_COOLDOWN_MS = 60 * 1000;
 
 const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
@@ -359,14 +361,27 @@ const submitRating = async () => {
     return;
   }
 
-  const { data } = await api.post(`/api/user/ratings/${detail.value.id}`, {
-    score: selectedRating.value,
-  });
+  const cooldownKey = `rating_cooldown:comic:${detail.value.id}:user:${auth.user?.id ?? "me"}`;
+  const now = Date.now();
+  const lastRatingAt = Number(localStorage.getItem(cooldownKey) || "0");
+  if (lastRatingAt && now - lastRatingAt < RATING_COOLDOWN_MS) {
+    socialNotice.value = "Bạn vừa đánh giá truyện này. Vui lòng chờ 1 phút rồi thử lại.";
+    return;
+  }
 
-  myRating.value = selectedRating.value;
-  ratingAverage.value = data.averageScore || 0;
-  ratingCount.value = data.ratingCount || 0;
-  socialNotice.value = "Đã cập nhật đánh giá.";
+  try {
+    const { data } = await api.post(`/api/user/ratings/${detail.value.id}`, {
+      score: selectedRating.value,
+    });
+
+    localStorage.setItem(cooldownKey, String(now));
+    myRating.value = selectedRating.value;
+    ratingAverage.value = data.averageScore || 0;
+    ratingCount.value = data.ratingCount || 0;
+    socialNotice.value = "Đã cập nhật đánh giá.";
+  } catch (error: any) {
+    socialNotice.value = error?.response?.data?.message || "Không thể gửi đánh giá lúc này.";
+  }
 };
 
 const submitComment = async () => {
@@ -435,14 +450,27 @@ const submitReport = async () => {
     return;
   }
 
-  await api.post("/api/user/reports", {
-    comicId: detail.value.id,
-    reason: reportReason.value,
-    details: reportDetails.value.trim() || undefined,
-  });
+  const cooldownKey = `report_cooldown:comic:${detail.value.id}:user:${auth.user?.id ?? "me"}`;
+  const now = Date.now();
+  const lastReportAt = Number(localStorage.getItem(cooldownKey) || "0");
+  if (lastReportAt && now - lastReportAt < REPORT_COOLDOWN_MS) {
+    socialNotice.value = "Bạn vừa gửi báo cáo. Vui lòng chờ 1 phút rồi thử lại.";
+    return;
+  }
 
-  reportDetails.value = "";
-  socialNotice.value = "Đã gửi báo cáo, cảm ơn bạn.";
+  try {
+    await api.post("/api/user/reports", {
+      comicId: detail.value.id,
+      reason: reportReason.value,
+      details: reportDetails.value.trim() || undefined,
+    });
+
+    localStorage.setItem(cooldownKey, String(now));
+    reportDetails.value = "";
+    socialNotice.value = "Đã gửi báo cáo, cảm ơn bạn.";
+  } catch (error: any) {
+    socialNotice.value = error?.response?.data?.message || "Không thể gửi báo cáo lúc này.";
+  }
 };
 
 const formatCommentTime = (value: string) => {
