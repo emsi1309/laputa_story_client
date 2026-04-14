@@ -90,16 +90,25 @@
         <h2>Bình luận chương</h2>
       </div>
 
-      <form class="social-row social-row-stack" @submit.prevent="submitChapterComment" v-if="auth.isAuthenticated">
+      <form class="comment-composer" @submit.prevent="submitChapterComment">
+        <input
+          v-if="!auth.isAuthenticated"
+          class="comment-guest-input"
+          v-model="guestCommentName"
+          maxlength="120"
+          placeholder="Tên hiển thị của bạn"
+        />
         <textarea
+          class="comment-input"
           v-model="chapterCommentText"
-          rows="3"
+          rows="2"
           maxlength="2000"
-          placeholder="Viết bình luận cho chương này..."
+          placeholder="Viết bình luận công khai..."
         ></textarea>
-        <button class="primary-btn" type="submit">Đăng bình luận</button>
+        <div class="comment-composer-actions">
+          <button class="comment-submit" type="submit">Đăng bình luận</button>
+        </div>
       </form>
-      <p v-else class="detail-meta">Đăng nhập để bình luận chương.</p>
 
       <div class="comment-list" v-if="chapterComments.length">
         <article class="comment-item" v-for="comment in chapterComments" :key="comment.id">
@@ -185,6 +194,7 @@ const swipeRouteLock = ref(false);
 const chapterOptionsComicSlug = ref<string | null>(null);
 const chapterComments = ref<CommentItem[]>([]);
 const chapterCommentText = ref("");
+const guestCommentName = ref(localStorage.getItem("guest_comment_name") || "");
 const chapterReportReason = ref("SPAM");
 const chapterReportDetails = ref("");
 const readerNotice = ref("");
@@ -195,6 +205,7 @@ const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
+const COMMENT_COOLDOWN_MS = 60 * 1000;
 
 const formatCount = (value: number | null | undefined) => new Intl.NumberFormat("vi-VN").format(value || 0);
 
@@ -497,7 +508,7 @@ const loadChapterComments = async () => {
 };
 
 const submitChapterComment = async () => {
-  if (!readerData.value || !ensureAuth()) {
+  if (!readerData.value) {
     return;
   }
 
@@ -506,15 +517,52 @@ const submitChapterComment = async () => {
     return;
   }
 
-  const { data } = await api.post("/api/user/comments", {
-    comicId: readerData.value.comic.id,
-    chapterId: readerData.value.chapter.id,
-    content,
-  });
+  const cooldownKey = `comment_cooldown:chapter:${readerData.value.comic.id}:${readerData.value.chapter.id}`;
+  const now = Date.now();
+  const lastCommentAt = Number(localStorage.getItem(cooldownKey) || "0");
+  if (lastCommentAt && now - lastCommentAt < COMMENT_COOLDOWN_MS) {
+    readerNotice.value = "Bạn vừa gửi bình luận. Vui lòng chờ 1 phút rồi thử lại.";
+    return;
+  }
 
-  chapterComments.value = [data, ...chapterComments.value];
-  chapterCommentText.value = "";
-  readerNotice.value = "Đã đăng bình luận chương.";
+  try {
+    let data: CommentItem;
+    if (auth.isAuthenticated) {
+      const response = await api.post<CommentItem>("/api/user/comments", {
+        comicId: readerData.value.comic.id,
+        chapterId: readerData.value.chapter.id,
+        content,
+      });
+      data = response.data;
+    } else {
+      const guestName = guestCommentName.value.trim();
+      if (!guestName) {
+        readerNotice.value = "Vui lòng nhập tên trước khi bình luận.";
+        return;
+      }
+
+      localStorage.setItem("guest_comment_name", guestName);
+      const response = await api.post<CommentItem>("/api/public/comments", {
+        comicId: readerData.value.comic.id,
+        chapterId: readerData.value.chapter.id,
+        content,
+        guestName,
+      });
+      data = response.data;
+    }
+
+    localStorage.setItem(cooldownKey, String(now));
+
+    chapterComments.value = [data, ...chapterComments.value];
+    chapterCommentText.value = "";
+    readerNotice.value = "Đã đăng bình luận chương.";
+  } catch (error: any) {
+    if (error?.response?.status === 405) {
+      readerNotice.value = "Backend chưa cập nhật endpoint bình luận khách. Hãy restart backend rồi thử lại.";
+      return;
+    }
+    readerNotice.value = error?.response?.data?.message || "Không thể gửi bình luận chương lúc này.";
+  }
 };
 
 const removeChapterComment = async (commentId: number) => {

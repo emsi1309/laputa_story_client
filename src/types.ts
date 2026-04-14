@@ -89,7 +89,7 @@ export type CommentItem = {
   id: number;
   comicId: number;
   chapterId: number | null;
-  userId: number;
+  userId: number | null;
   userDisplayName: string;
   content: string;
   createdAt: string;

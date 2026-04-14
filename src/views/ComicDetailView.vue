@@ -15,8 +15,6 @@
           <span v-for="genre in detail.genres" :key="genre.id" class="chip static">{{ genre.name }}</span>
         </div>
 
-        <p class="detail-description">{{ detail.description || "Chưa có mô tả" }}</p>
-
         <div class="detail-actions">
           <router-link
             v-if="latestChapter"
@@ -36,7 +34,16 @@
           </router-link>
         </div>
 
-        <div class="social-card" style="margin-top: 10px;">
+        <div class="detail-tool-toggle">
+          <button type="button" class="secondary-btn" @click="toggleToolPanel('rating')">
+            {{ activeToolPanel === 'rating' ? 'Ẩn đánh giá' : 'Đánh giá truyện' }}
+          </button>
+          <button type="button" class="secondary-btn" @click="toggleToolPanel('report')">
+            {{ activeToolPanel === 'report' ? 'Ẩn báo cáo' : 'Báo cáo nội dung' }}
+          </button>
+        </div>
+
+        <div class="social-card tool-panel" v-if="activeToolPanel === 'rating'">
           <h3>Đánh giá truyện</h3>
           <p class="detail-meta">Điểm của bạn: {{ myRating ?? "Chưa đánh giá" }}</p>
           <div class="social-row">
@@ -46,11 +53,11 @@
                 {{ score }} sao
               </option>
             </select>
-            <button class="primary-btn" @click="submitRating">Gửi đánh giá</button>
+            <button class="primary-btn" type="button" @click="submitRating">Gửi</button>
           </div>
         </div>
 
-        <div class="social-card" style="margin-top: 10px;">
+        <div class="social-card tool-panel" v-if="activeToolPanel === 'report'">
           <h3>Báo cáo nội dung</h3>
           <div class="social-row social-row-stack">
             <select v-model="reportReason">
@@ -61,11 +68,28 @@
               <option value="OTHER">Khác</option>
             </select>
             <textarea v-model="reportDetails" rows="3" placeholder="Mô tả thêm (tuỳ chọn)"></textarea>
-            <button class="secondary-btn" @click="submitReport">Gửi báo cáo</button>
+            <button class="secondary-btn" type="button" @click="submitReport">Gửi báo cáo</button>
           </div>
         </div>
       </div>
     </div>
+
+    <article class="detail-description-block">
+      <div class="section-head" style="margin-bottom: 10px;">
+        <h2>Mô tả truyện</h2>
+      </div>
+      <p class="detail-description" :class="{ collapsed: shouldCollapseDescription && !descriptionExpanded }">
+        {{ descriptionText }}
+      </p>
+      <button
+        v-if="shouldCollapseDescription"
+        type="button"
+        class="secondary-btn"
+        @click="descriptionExpanded = !descriptionExpanded"
+      >
+        {{ descriptionExpanded ? "Thu gọn" : "Xem thêm" }}
+      </button>
+    </article>
 
     <div class="section-head" style="margin-top: 24px;">
       <h2>Danh sách chương</h2>
@@ -74,7 +98,7 @@
       </button>
     </div>
 
-    <div class="chapter-list">
+    <div class="chapter-list" :class="{ 'chapter-list-scroll': displayedChapters.length > 10 }">
       <router-link
         v-for="chapter in displayedChapters"
         :key="chapter.id"
@@ -96,16 +120,25 @@
         <h2>Bình luận truyện</h2>
       </div>
 
-      <form class="social-row social-row-stack" @submit.prevent="submitComment" v-if="auth.isAuthenticated">
+      <form class="comment-composer" @submit.prevent="submitComment">
+        <input
+          v-if="!auth.isAuthenticated"
+          class="comment-guest-input"
+          v-model="guestCommentName"
+          maxlength="120"
+          placeholder="Tên hiển thị của bạn"
+        />
         <textarea
+          class="comment-input"
           v-model="commentText"
-          rows="3"
+          rows="2"
           maxlength="2000"
-          placeholder="Viết bình luận cho truyện này..."
+          placeholder="Viết bình luận công khai..."
         ></textarea>
-        <button class="primary-btn" type="submit">Đăng bình luận</button>
+        <div class="comment-composer-actions">
+          <button class="comment-submit" type="submit">Đăng bình luận</button>
+        </div>
       </form>
-      <p v-else class="detail-meta">Đăng nhập để bình luận.</p>
 
       <div class="comment-list" v-if="comments.length">
         <article class="comment-item" v-for="comment in comments" :key="comment.id">
@@ -150,14 +183,21 @@ const myRating = ref<number | null>(null);
 const selectedRating = ref<number | null>(null);
 const comments = ref<CommentItem[]>([]);
 const commentText = ref("");
+const guestCommentName = ref(localStorage.getItem("guest_comment_name") || "");
 const reportReason = ref("SPAM");
 const reportDetails = ref("");
 const socialNotice = ref("");
+const descriptionExpanded = ref(false);
+const activeToolPanel = ref<"rating" | "report" | null>(null);
+
+const COMMENT_COOLDOWN_MS = 60 * 1000;
 
 const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
 
 const detailCoverSource = computed(() => resolvePublicImageUrl(detail.value?.coverUrl) || fallbackCover);
+const descriptionText = computed(() => detail.value?.description || "Chưa có mô tả");
+const shouldCollapseDescription = computed(() => descriptionText.value.length > 700);
 
 const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
 const formatRating = (value: number) => (value || 0).toFixed(1);
@@ -207,6 +247,7 @@ const latestChapter = computed(() => {
 const loadDetail = async () => {
   const { data } = await api.get(`/api/public/comics/${route.params.slug}`);
   detail.value = data;
+  descriptionExpanded.value = false;
   followCount.value = data.followCount || 0;
   favoriteCount.value = data.favoriteCount || 0;
   ratingAverage.value = data.ratingAverage || 0;
@@ -271,6 +312,10 @@ const ensureAuth = () => {
   return false;
 };
 
+const toggleToolPanel = (panel: "rating" | "report") => {
+  activeToolPanel.value = activeToolPanel.value === panel ? null : panel;
+};
+
 const toggleFollow = async () => {
   if (!detail.value) {
     return;
@@ -325,7 +370,7 @@ const submitRating = async () => {
 };
 
 const submitComment = async () => {
-  if (!detail.value || !ensureAuth()) {
+  if (!detail.value) {
     return;
   }
 
@@ -334,14 +379,50 @@ const submitComment = async () => {
     return;
   }
 
-  const { data } = await api.post("/api/user/comments", {
-    comicId: detail.value.id,
-    content,
-  });
+  const cooldownKey = `comment_cooldown:comic:${detail.value.id}`;
+  const now = Date.now();
+  const lastCommentAt = Number(localStorage.getItem(cooldownKey) || "0");
+  if (lastCommentAt && now - lastCommentAt < COMMENT_COOLDOWN_MS) {
+    socialNotice.value = "Bạn vừa gửi bình luận. Vui lòng chờ 1 phút rồi thử lại.";
+    return;
+  }
 
-  comments.value = [data, ...comments.value];
-  commentText.value = "";
-  socialNotice.value = "Đã đăng bình luận.";
+  try {
+    let data: CommentItem;
+    if (auth.isAuthenticated) {
+      const response = await api.post<CommentItem>("/api/user/comments", {
+        comicId: detail.value.id,
+        content,
+      });
+      data = response.data;
+    } else {
+      const guestName = guestCommentName.value.trim();
+      if (!guestName) {
+        socialNotice.value = "Vui lòng nhập tên trước khi bình luận.";
+        return;
+      }
+
+      localStorage.setItem("guest_comment_name", guestName);
+      const response = await api.post<CommentItem>("/api/public/comments", {
+        comicId: detail.value.id,
+        content,
+        guestName,
+      });
+      data = response.data;
+    }
+
+    localStorage.setItem(cooldownKey, String(now));
+
+    comments.value = [data, ...comments.value];
+    commentText.value = "";
+    socialNotice.value = "Đã đăng bình luận.";
+  } catch (error: any) {
+    if (error?.response?.status === 405) {
+      socialNotice.value = "Backend chưa cập nhật endpoint bình luận khách. Hãy restart backend rồi thử lại.";
+      return;
+    }
+    socialNotice.value = error?.response?.data?.message || "Không thể gửi bình luận lúc này.";
+  }
 };
 
 const removeComment = async (commentId: number) => {

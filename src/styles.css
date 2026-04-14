@@ -604,6 +604,15 @@ a {
   padding: 10px 12px;
 }
 
+.social-row input {
+  background: #111827;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
 .search-info,
 .detail-meta,
 .reader-head p,
@@ -638,6 +647,19 @@ a {
   border: 1px solid #273047;
   border-radius: 12px;
   padding: 14px;
+  white-space: pre-wrap;
+}
+
+.detail-description-block {
+  margin-top: 14px;
+}
+
+.detail-description.collapsed {
+  display: -webkit-box;
+  line-clamp: 8;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .detail-actions {
@@ -645,6 +667,28 @@ a {
   flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
+}
+
+.detail-tool-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tool-panel {
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.tool-panel .social-row {
+  align-items: stretch;
+}
+
+.tool-panel .social-row .primary-btn,
+.tool-panel .social-row .secondary-btn {
+  min-width: 96px;
+  padding: 8px 12px;
 }
 
 .primary-btn,
@@ -688,6 +732,20 @@ a {
 
 .chapter-item:first-child {
   border-top: none;
+}
+
+.chapter-list.chapter-list-scroll {
+  max-height: 522px;
+  overflow-y: auto;
+}
+
+.chapter-list.chapter-list-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chapter-list.chapter-list-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
 }
 
 .reader-wrap {
@@ -961,6 +1019,46 @@ a {
   border-radius: 10px;
   padding: 8px 10px;
   width: 100%;
+}
+
+.comment-composer {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #273047;
+  border-radius: 12px;
+  background: #111827;
+  padding: 10px;
+}
+
+.comment-guest-input,
+.comment-input {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #283549;
+  border-radius: 10px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.comment-input {
+  min-height: 74px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.comment-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.comment-submit {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
 }
 
 .comment-list {
