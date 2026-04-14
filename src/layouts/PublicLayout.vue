@@ -1,16 +1,5 @@
 <template>
   <div class="site-shell" :class="{ 'reader-mode': isReaderRoute }">
-    <button
-      v-if="isReaderRoute"
-      type="button"
-      class="reader-header-toggle"
-      :aria-label="isHeaderVisible ? 'An header' : 'Hien header'"
-      :title="isHeaderVisible ? 'An header' : 'Hien header'"
-      @click="toggleHeader"
-    >
-      {{ isHeaderVisible ? "Ẩn header" : "Hiện header" }}
-    </button>
-
     <SiteHeader v-show="isHeaderVisible" />
     <main class="site-main">
       <router-view />
@@ -27,10 +16,6 @@ const route = useRoute();
 const isHeaderVisible = ref(true);
 
 const isReaderRoute = computed(() => route.name === "reader");
-
-const toggleHeader = () => {
-  isHeaderVisible.value = !isHeaderVisible.value;
-};
 
 const handleReaderHeaderVisibility = (event: Event) => {
   if (!isReaderRoute.value) {
