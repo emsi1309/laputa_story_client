@@ -40,7 +40,12 @@
       </div>
     </div>
 
-    <div class="reader-pages">
+    <div
+      class="reader-pages"
+      @touchstart.passive="handleTouchStart"
+      @touchend.passive="handleTouchEnd"
+      @touchcancel.passive="resetSwipeTracking"
+    >
       <figure
         v-for="page in readerData.pages"
         :key="page.id"
@@ -119,6 +124,10 @@ const chapterOptions = ref<ChapterBrief[]>([]);
 const selectedChapterSlug = ref("");
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, boolean>>({});
+const swipeStartX = ref<number | null>(null);
+const swipeStartY = ref<number | null>(null);
+const swipeStartAt = ref(0);
+const swipeRouteLock = ref(false);
 let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
 
@@ -207,6 +216,89 @@ const jumpToSelectedChapter = async () => {
       chapterSlug: selectedChapterSlug.value,
     },
   });
+};
+
+const isInteractiveTouchTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(target.closest("a, button, input, textarea, select, label"));
+};
+
+const resetSwipeTracking = () => {
+  swipeStartX.value = null;
+  swipeStartY.value = null;
+  swipeStartAt.value = 0;
+};
+
+const goToChapterBySwipe = async (chapterSlug: string) => {
+  if (!readerData.value || swipeRouteLock.value) {
+    return;
+  }
+
+  if (!chapterSlug || chapterSlug === readerData.value.chapter.slug) {
+    return;
+  }
+
+  swipeRouteLock.value = true;
+  await router.push({
+    name: "reader",
+    params: {
+      comicSlug: readerData.value.comic.slug,
+      chapterSlug,
+    },
+  });
+
+  window.setTimeout(() => {
+    swipeRouteLock.value = false;
+  }, 180);
+};
+
+const handleTouchStart = (event: TouchEvent) => {
+  if (event.touches.length !== 1 || isInteractiveTouchTarget(event.target)) {
+    resetSwipeTracking();
+    return;
+  }
+
+  const touch = event.touches[0];
+  swipeStartX.value = touch.clientX;
+  swipeStartY.value = touch.clientY;
+  swipeStartAt.value = Date.now();
+};
+
+const handleTouchEnd = async (event: TouchEvent) => {
+  if (!readerData.value || swipeStartX.value === null || swipeStartY.value === null || swipeRouteLock.value) {
+    return;
+  }
+
+  const touch = event.changedTouches[0];
+  if (!touch) {
+    resetSwipeTracking();
+    return;
+  }
+
+  const deltaX = touch.clientX - swipeStartX.value;
+  const deltaY = touch.clientY - swipeStartY.value;
+  const elapsedMs = Date.now() - swipeStartAt.value;
+
+  resetSwipeTracking();
+
+  const absX = Math.abs(deltaX);
+  const absY = Math.abs(deltaY);
+  const isHorizontalSwipe = absX >= 70 && absX > absY * 1.3 && elapsedMs <= 700;
+  if (!isHorizontalSwipe) {
+    return;
+  }
+
+  if (deltaX < 0 && readerData.value.nextChapter) {
+    await goToChapterBySwipe(readerData.value.nextChapter.slug);
+    return;
+  }
+
+  if (deltaX > 0 && readerData.value.prevChapter) {
+    await goToChapterBySwipe(readerData.value.prevChapter.slug);
+  }
 };
 
 const scrollToTop = () => {
