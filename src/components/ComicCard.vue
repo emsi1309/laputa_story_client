@@ -8,7 +8,15 @@
       </div>
     </router-link>
     <div class="comic-body qq-card-body">
-      <router-link :to="`/comic/${comic.slug}`" class="comic-title qq-card-title">{{ comic.title }}</router-link>
+      <router-link
+        :to="`/comic/${comic.slug}`"
+        class="comic-title qq-card-title"
+        :data-full-title="comic.title"
+        :title="comic.title"
+        :aria-label="comic.title"
+      >
+        {{ comic.title }}
+      </router-link>
       <p class="comic-meta qq-card-meta">{{ comic.author || "Đang cập nhật" }}</p>
       <p class="comic-meta qq-card-meta">{{ comic.releaseYear || "N/A" }} · {{ comic.status }}</p>
       <router-link
