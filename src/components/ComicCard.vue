@@ -10,6 +10,7 @@
     <div class="comic-body qq-card-body">
       <router-link :to="`/comic/${comic.slug}`" class="comic-title qq-card-title">{{ comic.title }}</router-link>
       <p class="comic-meta qq-card-meta">{{ comic.author || "Đang cập nhật" }}</p>
+      <p class="comic-meta qq-card-meta">{{ comic.releaseYear || "N/A" }} · {{ comic.status }}</p>
       <router-link
         v-if="comic.latestChapter"
         :to="`/read/${comic.slug}/${comic.latestChapter.slug}`"
@@ -17,7 +18,9 @@
       >
         Chương {{ comic.latestChapter.number ?? comic.latestChapter.sortIndex }}
       </router-link>
-      <span class="qq-card-follow">Lượt xem {{ formatCount(comic.viewCount) }} · Theo dõi {{ formatCount(comic.followCount) }}</span>
+      <span class="qq-card-follow">
+        Lượt xem {{ formatCount(comic.viewCount) }} · Theo dõi {{ formatCount(comic.followCount) }} · Yêu thích {{ formatCount(comic.favoriteCount) }} · ★ {{ comic.ratingAverage.toFixed(1) }}
+      </span>
     </div>
   </article>
 </template>

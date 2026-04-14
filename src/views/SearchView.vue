@@ -6,12 +6,20 @@
 
     <form class="search-panel" @submit.prevent="submitSearch">
       <input v-model="query" placeholder="Nhập tên truyện..." />
+      <input v-model="author" placeholder="Tác giả" />
       <select v-model="selectedGenreValue">
         <option value="">Tất cả thể loại</option>
         <option v-for="genre in genres" :key="genre.id" :value="String(genre.id)">
           {{ genre.name }}
         </option>
       </select>
+      <select v-model="selectedStatus">
+        <option value="">Mọi trạng thái</option>
+        <option value="ONGOING">Đang tiến hành</option>
+        <option value="COMPLETED">Hoàn thành</option>
+        <option value="HIATUS">Tạm ngưng</option>
+      </select>
+      <input v-model="releaseYearValue" type="number" min="1900" max="2999" placeholder="Năm" />
       <button type="submit">Tìm</button>
     </form>
 
@@ -37,7 +45,10 @@ const route = useRoute();
 const router = useRouter();
 
 const query = ref("");
+const author = ref("");
 const selectedGenre = ref<number | null>(null);
+const selectedStatus = ref("");
+const releaseYear = ref<number | null>(null);
 const genres = ref<GenreItem[]>([]);
 const comics = ref<ComicCard[]>([]);
 const page = ref(0);
@@ -50,6 +61,13 @@ const selectedGenreValue = computed({
   },
 });
 
+const releaseYearValue = computed({
+  get: () => (releaseYear.value == null ? "" : String(releaseYear.value)),
+  set: (value: string) => {
+    releaseYear.value = value ? Number(value) : null;
+  },
+});
+
 const loadGenres = async () => {
   const { data } = await api.get("/api/public/genres");
   genres.value = data || [];
@@ -59,7 +77,10 @@ const loadResult = async () => {
   const { data } = await api.get("/api/public/comics", {
     params: {
       query: query.value || undefined,
+      author: author.value || undefined,
       genreId: selectedGenre.value ?? undefined,
+      status: selectedStatus.value || undefined,
+      year: releaseYear.value ?? undefined,
       page: page.value,
       size: 18,
     },
@@ -74,7 +95,10 @@ const submitSearch = () => {
     name: "search",
     query: {
       q: query.value || undefined,
+      author: author.value || undefined,
       genre: selectedGenre.value ?? undefined,
+      status: selectedStatus.value || undefined,
+      year: releaseYear.value ?? undefined,
     },
   });
 };
@@ -86,8 +110,13 @@ const changePage = (nextPage: number) => {
 
 const syncFromRoute = async () => {
   query.value = (route.query.q as string) || "";
+  author.value = (route.query.author as string) || "";
   const rawGenre = route.query.genre as string | undefined;
   selectedGenre.value = rawGenre ? Number(rawGenre) : null;
+  selectedStatus.value = ((route.query.status as string) || "").toUpperCase();
+  const rawYear = route.query.year as string | undefined;
+  const year = rawYear ? Number(rawYear) : null;
+  releaseYear.value = year && !Number.isNaN(year) ? year : null;
   page.value = 0;
   await loadResult();
 };

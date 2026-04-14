@@ -18,7 +18,34 @@
         </div>
 
         <div class="qq-auth" v-else>
+          <div class="qq-noti-wrap">
+            <button class="qq-auth-btn" type="button" @click="toggleNotificationPanel">
+              Thông báo
+              <span class="qq-noti-badge" v-if="unreadCount > 0">{{ unreadCount }}</span>
+            </button>
+            <div class="qq-noti-panel" v-if="showNotificationPanel">
+              <div class="qq-noti-head">
+                <strong>Thông báo mới</strong>
+                <button type="button" @click="markAllRead" v-if="notifications.length">Đánh dấu đã đọc</button>
+              </div>
+              <div class="qq-noti-list" v-if="notifications.length">
+                <button
+                  v-for="notification in notifications"
+                  :key="notification.id"
+                  type="button"
+                  class="qq-noti-item"
+                  :class="{ unread: !notification.read }"
+                  @click="openNotification(notification)"
+                >
+                  <span>{{ notification.title }}</span>
+                  <small>{{ notification.message }}</small>
+                </button>
+              </div>
+              <p class="qq-noti-empty" v-else>Chưa có thông báo nào.</p>
+            </div>
+          </div>
           <router-link to="/library" class="qq-auth-btn">Theo dõi</router-link>
+          <router-link to="/library" class="qq-auth-btn">Yêu thích</router-link>
           <button class="qq-auth-btn" @click="logout">Đăng xuất</button>
         </div>
       </div>
@@ -70,12 +97,15 @@ import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../lib/api";
 import { useAuthStore } from "../stores/auth";
-import type { GenreItem } from "../types";
+import type { GenreItem, NotificationItem, NotificationPage } from "../types";
 
 const router = useRouter();
 const auth = useAuthStore();
 const keyword = ref("");
 const genres = ref<GenreItem[]>([]);
+const notifications = ref<NotificationItem[]>([]);
+const unreadCount = ref(0);
+const showNotificationPanel = ref(false);
 
 const submitSearch = () => {
   router.push({ name: "search", query: { q: keyword.value || undefined } });
@@ -86,10 +116,66 @@ const logout = () => {
   router.push({ name: "home" });
 };
 
+const toggleNotificationPanel = async () => {
+  showNotificationPanel.value = !showNotificationPanel.value;
+  if (showNotificationPanel.value) {
+    await loadNotifications();
+  }
+};
+
+const loadNotifications = async () => {
+  if (!auth.isAuthenticated) {
+    notifications.value = [];
+    unreadCount.value = 0;
+    return;
+  }
+
+  const [{ data: countData }, { data: pageData }] = await Promise.all([
+    api.get<{ unreadCount: number }>("/api/user/notifications/unread-count"),
+    api.get<NotificationPage>("/api/user/notifications", { params: { page: 0, size: 8 } }),
+  ]);
+
+  unreadCount.value = countData.unreadCount || 0;
+  notifications.value = pageData.content || [];
+};
+
+const openNotification = async (notification: NotificationItem) => {
+  await api.post(`/api/user/notifications/${notification.id}/read`);
+  unreadCount.value = Math.max(0, unreadCount.value - (notification.read ? 0 : 1));
+  notifications.value = notifications.value.map((item) =>
+    item.id === notification.id
+      ? {
+          ...item,
+          read: true,
+        }
+      : item
+  );
+
+  if (notification.link) {
+    showNotificationPanel.value = false;
+    router.push(notification.link);
+  }
+};
+
+const markAllRead = async () => {
+  await api.post("/api/user/notifications/read-all");
+  unreadCount.value = 0;
+  notifications.value = notifications.value.map((item) => ({
+    ...item,
+    read: true,
+  }));
+};
+
 const loadGenres = async () => {
   const { data } = await api.get("/api/public/genres");
   genres.value = data || [];
 };
 
 onMounted(loadGenres);
+
+onMounted(async () => {
+  if (auth.isAuthenticated) {
+    await loadNotifications();
+  }
+});
 </script>

@@ -85,6 +85,59 @@
       </router-link>
     </div>
 
+    <article class="social-card" style="margin-top: 14px;">
+      <div class="section-head" style="margin-bottom: 10px;">
+        <h2>Bình luận chương</h2>
+      </div>
+
+      <form class="social-row social-row-stack" @submit.prevent="submitChapterComment" v-if="auth.isAuthenticated">
+        <textarea
+          v-model="chapterCommentText"
+          rows="3"
+          maxlength="2000"
+          placeholder="Viết bình luận cho chương này..."
+        ></textarea>
+        <button class="primary-btn" type="submit">Đăng bình luận</button>
+      </form>
+      <p v-else class="detail-meta">Đăng nhập để bình luận chương.</p>
+
+      <div class="comment-list" v-if="chapterComments.length">
+        <article class="comment-item" v-for="comment in chapterComments" :key="comment.id">
+          <div class="comment-head">
+            <strong>{{ comment.userDisplayName }}</strong>
+            <div class="comment-actions">
+              <span>{{ formatCommentTime(comment.createdAt) }}</span>
+              <button
+                type="button"
+                class="comment-delete"
+                v-if="comment.mine"
+                @click="removeChapterComment(comment.id)"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+          <p>{{ comment.content }}</p>
+        </article>
+      </div>
+      <p v-else class="empty-text">Chưa có bình luận nào cho chương này.</p>
+
+      <div class="social-row social-row-stack" style="margin-top: 10px;">
+        <h3 style="margin: 0;">Báo cáo nội dung chương</h3>
+        <select v-model="chapterReportReason">
+          <option value="SPAM">Spam</option>
+          <option value="INAPPROPRIATE">Không phù hợp</option>
+          <option value="COPYRIGHT">Bản quyền</option>
+          <option value="HARASSMENT">Quấy rối</option>
+          <option value="OTHER">Khác</option>
+        </select>
+        <textarea v-model="chapterReportDetails" rows="3" placeholder="Mô tả thêm (tuỳ chọn)"></textarea>
+        <button class="secondary-btn" type="button" @click="submitChapterReport">Gửi báo cáo</button>
+      </div>
+
+      <p v-if="readerNotice" class="search-info">{{ readerNotice }}</p>
+    </article>
+
     <div class="reader-scroll-controls">
       <button
         type="button"
@@ -114,7 +167,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { getApiBaseUrl } from "../lib/runtimeConfig";
 import { useAuthStore } from "../stores/auth";
-import type { ChapterBrief, ComicDetail, ReaderData } from "../types";
+import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
 
 const route = useRoute();
 const router = useRouter();
@@ -130,6 +183,11 @@ const swipeStartY = ref<number | null>(null);
 const swipeStartAt = ref(0);
 const swipeRouteLock = ref(false);
 const chapterOptionsComicSlug = ref<string | null>(null);
+const chapterComments = ref<CommentItem[]>([]);
+const chapterCommentText = ref("");
+const chapterReportReason = ref("SPAM");
+const chapterReportDetails = ref("");
+const readerNotice = ref("");
 let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
 const READER_CACHE_PREFIX = "reader_cache:";
@@ -396,6 +454,90 @@ const jumpToSelectedChapter = async () => {
   });
 };
 
+const ensureAuth = () => {
+  if (auth.isAuthenticated) {
+    return true;
+  }
+
+  router.push({ name: "login", query: { redirect: route.fullPath } });
+  return false;
+};
+
+const formatCommentTime = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+};
+
+const loadChapterComments = async () => {
+  if (!readerData.value) {
+    chapterComments.value = [];
+    return;
+  }
+
+  const { data } = await api.get("/api/public/comments", {
+    params: {
+      comicSlug: readerData.value.comic.slug,
+      chapterSlug: readerData.value.chapter.slug,
+      page: 0,
+      size: 40,
+    },
+  });
+
+  chapterComments.value = data.content || [];
+};
+
+const submitChapterComment = async () => {
+  if (!readerData.value || !ensureAuth()) {
+    return;
+  }
+
+  const content = chapterCommentText.value.trim();
+  if (!content) {
+    return;
+  }
+
+  const { data } = await api.post("/api/user/comments", {
+    comicId: readerData.value.comic.id,
+    chapterId: readerData.value.chapter.id,
+    content,
+  });
+
+  chapterComments.value = [data, ...chapterComments.value];
+  chapterCommentText.value = "";
+  readerNotice.value = "Đã đăng bình luận chương.";
+};
+
+const removeChapterComment = async (commentId: number) => {
+  await api.delete(`/api/user/comments/${commentId}`);
+  chapterComments.value = chapterComments.value.filter((comment) => comment.id !== commentId);
+};
+
+const submitChapterReport = async () => {
+  if (!readerData.value || !ensureAuth()) {
+    return;
+  }
+
+  await api.post("/api/user/reports", {
+    comicId: readerData.value.comic.id,
+    chapterId: readerData.value.chapter.id,
+    reason: chapterReportReason.value,
+    details: chapterReportDetails.value.trim() || undefined,
+  });
+
+  chapterReportDetails.value = "";
+  readerNotice.value = "Đã gửi báo cáo chương.";
+};
+
 const isInteractiveTouchTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -542,6 +684,7 @@ const loadReader = async () => {
   selectedChapterSlug.value = data.chapter.slug;
 
   await loadChapterOptions(data.comic.slug);
+  await loadChapterComments();
 
   imageFallbackMap.value = {};
   await restoreSavedPage();
