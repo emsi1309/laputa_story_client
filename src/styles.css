@@ -47,7 +47,7 @@ a {
 .qq-top-inner {
   min-height: 68px;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-columns: 260px minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
 }
@@ -55,18 +55,25 @@ a {
 .qq-brand {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   font-weight: 800;
-  letter-spacing: 0.8px;
-  font-size: 26px;
+  letter-spacing: 0.2px;
+  min-width: 0;
 }
 
-.qq-brand-main {
+.qq-brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+  object-position: center top;
+  border: 1px solid #2a3247;
+}
+
+.qq-brand-title {
   color: #f8fafc;
-}
-
-.qq-brand-accent {
-  color: #f97316;
+  font-size: 24px;
+  white-space: nowrap;
 }
 
 .qq-search {
@@ -861,6 +868,19 @@ a {
   .qq-top-inner {
     grid-template-columns: 1fr;
     padding: 10px 0;
+  }
+
+  .qq-brand {
+    justify-self: center;
+  }
+
+  .qq-brand-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .qq-brand-title {
+    font-size: 20px;
   }
 
   .qq-nav {

@@ -2,9 +2,9 @@
   <header class="qq-header">
     <div class="qq-top">
       <div class="container qq-top-inner">
-        <router-link to="/" class="qq-brand">
-          <span class="qq-brand-main">NET</span>
-          <span class="qq-brand-accent">TRUYỆN</span>
+        <router-link to="/" class="qq-brand" aria-label="Truyện Chill">
+          <img class="qq-brand-logo" src="/logo-truyen-chill.png" alt="Truyện Chill" />
+          <span class="qq-brand-title">Truyện Chill</span>
         </router-link>
 
         <form class="qq-search" @submit.prevent="submitSearch">

@@ -5,7 +5,7 @@
         <span class="community-dot"></span>
         <div>
           <p class="community-title">CỘNG ĐỒNG</p>
-          <p class="community-desc">Tham gia để cập nhật và ủng hộ NetTruyen.</p>
+          <p class="community-desc">Tham gia để cập nhật và ủng hộ Truyện Chill.</p>
         </div>
       </div>
       <div class="community-item">
@@ -33,7 +33,7 @@
 
   <section class="container section-block">
     <div class="section-head">
-      <h2 class="section-title">Độc Quyền Truyện QQ</h2>
+      <h2 class="section-title">Độc Quyền Truyện Chill</h2>
     </div>
     <HorizontalComicRow :comics="exclusiveComics" />
   </section>
