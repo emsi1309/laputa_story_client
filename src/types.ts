@@ -91,6 +91,9 @@ export type CommentItem = {
   chapterId: number | null;
   userId: number | null;
   userDisplayName: string;
+  userRole: "ADMIN" | "USER" | "GUEST";
+  parentId: number | null;
+  replyToDisplayName: string | null;
   content: string;
   createdAt: string;
   updatedAt: string;

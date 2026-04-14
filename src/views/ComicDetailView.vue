@@ -135,18 +135,41 @@
           maxlength="2000"
           placeholder="Viết bình luận công khai..."
         ></textarea>
+        <div class="replying-banner" v-if="replyingTo">
+          <span>
+            Đang trả lời <strong>{{ replyingTo.userDisplayName }}</strong>
+          </span>
+          <button type="button" class="comment-reply-cancel" @click="cancelReply">Hủy</button>
+        </div>
         <div class="comment-composer-actions">
           <button class="comment-submit" type="submit">Đăng bình luận</button>
         </div>
       </form>
 
-      <div class="comment-list" v-if="comments.length">
-        <article class="comment-item" v-for="comment in comments" :key="comment.id">
+      <div class="comment-list" v-if="threadedComments.length">
+        <article
+          class="comment-item"
+          :class="{ 'comment-item-reply': comment.depth > 0 }"
+          :style="{ marginLeft: `${Math.min(comment.depth, 4) * 16}px` }"
+          v-for="comment in threadedComments"
+          :key="comment.id"
+        >
           <div class="comment-head">
-            <strong>{{ comment.userDisplayName }}</strong>
+            <div class="comment-meta">
+              <div class="comment-author">
+                <strong>{{ comment.userDisplayName }}</strong>
+                <span class="comment-role" :class="commentRoleClass(comment.userRole)">
+                  {{ commentRoleLabel(comment.userRole) }}
+                </span>
+              </div>
+              <span class="comment-reply-to" v-if="comment.replyToDisplayName">
+                Trả lời {{ comment.replyToDisplayName }}
+              </span>
+            </div>
             <div class="comment-actions">
               <span>{{ formatCommentTime(comment.createdAt) }}</span>
-              <button class="comment-delete" v-if="comment.mine" @click="removeComment(comment.id)">Xóa</button>
+              <button type="button" class="comment-reply" @click="startReply(comment)">Trả lời</button>
+              <button type="button" class="comment-delete" v-if="comment.mine" @click="removeComment(comment.id)">Xóa</button>
             </div>
           </div>
           <p>{{ comment.content }}</p>
@@ -184,6 +207,7 @@ const selectedRating = ref<number | null>(null);
 const comments = ref<CommentItem[]>([]);
 const commentText = ref("");
 const guestCommentName = ref(localStorage.getItem("guest_comment_name") || "");
+const replyingTo = ref<CommentItem | null>(null);
 const reportReason = ref("SPAM");
 const reportDetails = ref("");
 const socialNotice = ref("");
@@ -194,12 +218,78 @@ const COMMENT_COOLDOWN_MS = 60 * 1000;
 const RATING_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 
+type ThreadedCommentItem = CommentItem & {
+  depth: number;
+};
+
 const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
 
 const detailCoverSource = computed(() => resolvePublicImageUrl(detail.value?.coverUrl) || fallbackCover);
 const descriptionText = computed(() => detail.value?.description || "Chưa có mô tả");
 const shouldCollapseDescription = computed(() => descriptionText.value.length > 700);
+
+const toTimestamp = (value: string) => {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const threadedComments = computed<ThreadedCommentItem[]>(() => {
+  const source = comments.value;
+  if (!source.length) {
+    return [];
+  }
+
+  const byId = new Map<number, CommentItem>();
+  const childrenMap = new Map<number, CommentItem[]>();
+  for (const comment of source) {
+    byId.set(comment.id, comment);
+    if (comment.parentId != null) {
+      const children = childrenMap.get(comment.parentId) || [];
+      children.push(comment);
+      childrenMap.set(comment.parentId, children);
+    }
+  }
+
+  const roots = source
+    .filter((comment) => comment.parentId == null || !byId.has(comment.parentId))
+    .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
+
+  for (const children of childrenMap.values()) {
+    children.sort((a, b) => toTimestamp(a.createdAt) - toTimestamp(b.createdAt));
+  }
+
+  const flattened: ThreadedCommentItem[] = [];
+  const visited = new Set<number>();
+
+  const walk = (node: CommentItem, depth: number) => {
+    if (visited.has(node.id)) {
+      return;
+    }
+
+    visited.add(node.id);
+    flattened.push({ ...node, depth });
+    const children = childrenMap.get(node.id) || [];
+    for (const child of children) {
+      walk(child, Math.min(depth + 1, 6));
+    }
+  };
+
+  for (const root of roots) {
+    walk(root, 0);
+  }
+
+  if (flattened.length < source.length) {
+    const leftovers = source
+      .filter((comment) => !visited.has(comment.id))
+      .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
+    for (const comment of leftovers) {
+      flattened.push({ ...comment, depth: 0 });
+    }
+  }
+
+  return flattened;
+});
 
 const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
 const formatRating = (value: number) => (value || 0).toFixed(1);
@@ -304,6 +394,7 @@ const loadComments = async () => {
     },
   });
   comments.value = data.content || [];
+  replyingTo.value = null;
 };
 
 const ensureAuth = () => {
@@ -389,6 +480,9 @@ const submitComment = async () => {
     return;
   }
 
+  const parentId = replyingTo.value?.id ?? null;
+  const isReply = parentId != null;
+
   const content = commentText.value.trim();
   if (!content) {
     return;
@@ -407,6 +501,7 @@ const submitComment = async () => {
     if (auth.isAuthenticated) {
       const response = await api.post<CommentItem>("/api/user/comments", {
         comicId: detail.value.id,
+        parentId,
         content,
       });
       data = response.data;
@@ -420,6 +515,7 @@ const submitComment = async () => {
       localStorage.setItem("guest_comment_name", guestName);
       const response = await api.post<CommentItem>("/api/public/comments", {
         comicId: detail.value.id,
+        parentId,
         content,
         guestName,
       });
@@ -430,7 +526,8 @@ const submitComment = async () => {
 
     comments.value = [data, ...comments.value];
     commentText.value = "";
-    socialNotice.value = "Đã đăng bình luận.";
+    replyingTo.value = null;
+    socialNotice.value = isReply ? "Đã gửi phản hồi." : "Đã đăng bình luận.";
   } catch (error: any) {
     if (error?.response?.status === 405) {
       socialNotice.value = "Backend chưa cập nhật endpoint bình luận khách. Hãy restart backend rồi thử lại.";
@@ -443,6 +540,17 @@ const submitComment = async () => {
 const removeComment = async (commentId: number) => {
   await api.delete(`/api/user/comments/${commentId}`);
   comments.value = comments.value.filter((comment) => comment.id !== commentId);
+  if (replyingTo.value?.id === commentId) {
+    replyingTo.value = null;
+  }
+};
+
+const startReply = (comment: CommentItem) => {
+  replyingTo.value = comment;
+};
+
+const cancelReply = () => {
+  replyingTo.value = null;
 };
 
 const submitReport = async () => {
@@ -485,6 +593,35 @@ const formatCommentTime = (value: string) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(parsed);
+};
+
+const normalizeCommentRole = (role: string | null | undefined): "ADMIN" | "USER" | "GUEST" => {
+  if (role === "ADMIN" || role === "USER" || role === "GUEST") {
+    return role;
+  }
+  return "GUEST";
+};
+
+const commentRoleLabel = (role: string | null | undefined) => {
+  const normalized = normalizeCommentRole(role);
+  if (normalized === "ADMIN") {
+    return "admin";
+  }
+  if (normalized === "USER") {
+    return "user";
+  }
+  return "guest";
+};
+
+const commentRoleClass = (role: string | null | undefined) => {
+  const normalized = normalizeCommentRole(role);
+  if (normalized === "ADMIN") {
+    return "comment-role-admin";
+  }
+  if (normalized === "USER") {
+    return "comment-role-user";
+  }
+  return "comment-role-guest";
 };
 
 onMounted(async () => {

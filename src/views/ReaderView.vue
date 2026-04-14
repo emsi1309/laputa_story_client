@@ -105,17 +105,40 @@
           maxlength="2000"
           placeholder="Viết bình luận công khai..."
         ></textarea>
+        <div class="replying-banner" v-if="replyingToChapterComment">
+          <span>
+            Đang trả lời <strong>{{ replyingToChapterComment.userDisplayName }}</strong>
+          </span>
+          <button type="button" class="comment-reply-cancel" @click="cancelChapterReply">Hủy</button>
+        </div>
         <div class="comment-composer-actions">
           <button class="comment-submit" type="submit">Đăng bình luận</button>
         </div>
       </form>
 
-      <div class="comment-list" v-if="chapterComments.length">
-        <article class="comment-item" v-for="comment in chapterComments" :key="comment.id">
+      <div class="comment-list" v-if="threadedChapterComments.length">
+        <article
+          class="comment-item"
+          :class="{ 'comment-item-reply': comment.depth > 0 }"
+          :style="{ marginLeft: `${Math.min(comment.depth, 4) * 16}px` }"
+          v-for="comment in threadedChapterComments"
+          :key="comment.id"
+        >
           <div class="comment-head">
-            <strong>{{ comment.userDisplayName }}</strong>
+            <div class="comment-meta">
+              <div class="comment-author">
+                <strong>{{ comment.userDisplayName }}</strong>
+                <span class="comment-role" :class="commentRoleClass(comment.userRole)">
+                  {{ commentRoleLabel(comment.userRole) }}
+                </span>
+              </div>
+              <span class="comment-reply-to" v-if="comment.replyToDisplayName">
+                Trả lời {{ comment.replyToDisplayName }}
+              </span>
+            </div>
             <div class="comment-actions">
               <span>{{ formatCommentTime(comment.createdAt) }}</span>
+              <button type="button" class="comment-reply" @click="startChapterReply(comment)">Trả lời</button>
               <button
                 type="button"
                 class="comment-delete"
@@ -195,6 +218,7 @@ const chapterOptionsComicSlug = ref<string | null>(null);
 const chapterComments = ref<CommentItem[]>([]);
 const chapterCommentText = ref("");
 const guestCommentName = ref(localStorage.getItem("guest_comment_name") || "");
+const replyingToChapterComment = ref<CommentItem | null>(null);
 const chapterReportReason = ref("SPAM");
 const chapterReportDetails = ref("");
 const readerNotice = ref("");
@@ -207,6 +231,72 @@ const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
+
+type ThreadedCommentItem = CommentItem & {
+  depth: number;
+};
+
+const toTimestamp = (value: string) => {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const threadedChapterComments = computed<ThreadedCommentItem[]>(() => {
+  const source = chapterComments.value;
+  if (!source.length) {
+    return [];
+  }
+
+  const byId = new Map<number, CommentItem>();
+  const childrenMap = new Map<number, CommentItem[]>();
+  for (const comment of source) {
+    byId.set(comment.id, comment);
+    if (comment.parentId != null) {
+      const children = childrenMap.get(comment.parentId) || [];
+      children.push(comment);
+      childrenMap.set(comment.parentId, children);
+    }
+  }
+
+  const roots = source
+    .filter((comment) => comment.parentId == null || !byId.has(comment.parentId))
+    .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
+
+  for (const children of childrenMap.values()) {
+    children.sort((a, b) => toTimestamp(a.createdAt) - toTimestamp(b.createdAt));
+  }
+
+  const flattened: ThreadedCommentItem[] = [];
+  const visited = new Set<number>();
+
+  const walk = (node: CommentItem, depth: number) => {
+    if (visited.has(node.id)) {
+      return;
+    }
+
+    visited.add(node.id);
+    flattened.push({ ...node, depth });
+    const children = childrenMap.get(node.id) || [];
+    for (const child of children) {
+      walk(child, Math.min(depth + 1, 6));
+    }
+  };
+
+  for (const root of roots) {
+    walk(root, 0);
+  }
+
+  if (flattened.length < source.length) {
+    const leftovers = source
+      .filter((comment) => !visited.has(comment.id))
+      .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
+    for (const comment of leftovers) {
+      flattened.push({ ...comment, depth: 0 });
+    }
+  }
+
+  return flattened;
+});
 
 const formatCount = (value: number | null | undefined) => new Intl.NumberFormat("vi-VN").format(value || 0);
 
@@ -490,6 +580,35 @@ const formatCommentTime = (value: string) => {
   }).format(parsed);
 };
 
+const normalizeCommentRole = (role: string | null | undefined): "ADMIN" | "USER" | "GUEST" => {
+  if (role === "ADMIN" || role === "USER" || role === "GUEST") {
+    return role;
+  }
+  return "GUEST";
+};
+
+const commentRoleLabel = (role: string | null | undefined) => {
+  const normalized = normalizeCommentRole(role);
+  if (normalized === "ADMIN") {
+    return "admin";
+  }
+  if (normalized === "USER") {
+    return "user";
+  }
+  return "guest";
+};
+
+const commentRoleClass = (role: string | null | undefined) => {
+  const normalized = normalizeCommentRole(role);
+  if (normalized === "ADMIN") {
+    return "comment-role-admin";
+  }
+  if (normalized === "USER") {
+    return "comment-role-user";
+  }
+  return "comment-role-guest";
+};
+
 const loadChapterComments = async () => {
   if (!readerData.value) {
     chapterComments.value = [];
@@ -506,12 +625,16 @@ const loadChapterComments = async () => {
   });
 
   chapterComments.value = data.content || [];
+  replyingToChapterComment.value = null;
 };
 
 const submitChapterComment = async () => {
   if (!readerData.value) {
     return;
   }
+
+  const parentId = replyingToChapterComment.value?.id ?? null;
+  const isReply = parentId != null;
 
   const content = chapterCommentText.value.trim();
   if (!content) {
@@ -532,6 +655,7 @@ const submitChapterComment = async () => {
       const response = await api.post<CommentItem>("/api/user/comments", {
         comicId: readerData.value.comic.id,
         chapterId: readerData.value.chapter.id,
+        parentId,
         content,
       });
       data = response.data;
@@ -546,6 +670,7 @@ const submitChapterComment = async () => {
       const response = await api.post<CommentItem>("/api/public/comments", {
         comicId: readerData.value.comic.id,
         chapterId: readerData.value.chapter.id,
+        parentId,
         content,
         guestName,
       });
@@ -556,7 +681,8 @@ const submitChapterComment = async () => {
 
     chapterComments.value = [data, ...chapterComments.value];
     chapterCommentText.value = "";
-    readerNotice.value = "Đã đăng bình luận chương.";
+    replyingToChapterComment.value = null;
+    readerNotice.value = isReply ? "Đã gửi phản hồi chương." : "Đã đăng bình luận chương.";
   } catch (error: any) {
     if (error?.response?.status === 405) {
       readerNotice.value = "Backend chưa cập nhật endpoint bình luận khách. Hãy restart backend rồi thử lại.";
@@ -569,6 +695,17 @@ const submitChapterComment = async () => {
 const removeChapterComment = async (commentId: number) => {
   await api.delete(`/api/user/comments/${commentId}`);
   chapterComments.value = chapterComments.value.filter((comment) => comment.id !== commentId);
+  if (replyingToChapterComment.value?.id === commentId) {
+    replyingToChapterComment.value = null;
+  }
+};
+
+const startChapterReply = (comment: CommentItem) => {
+  replyingToChapterComment.value = comment;
+};
+
+const cancelChapterReply = () => {
+  replyingToChapterComment.value = null;
 };
 
 const submitChapterReport = async () => {
