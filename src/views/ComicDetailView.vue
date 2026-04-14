@@ -11,8 +11,8 @@
         <p class="detail-meta">Lượt yêu thích: {{ formatCount(favoriteCount) }}</p>
         <p class="detail-meta">Đánh giá: {{ formatRating(ratingAverage) }} ({{ formatCount(ratingCount) }} lượt)</p>
 
-        <div class="chip-row">
-          <span v-for="genre in detail.genres" :key="genre.id" class="chip static">{{ genre.name }}</span>
+        <div class="chip-row genre-row">
+          <span v-for="genre in detail.genres" :key="genre.id" class="chip static genre-tag">{{ genre.name }}</span>
         </div>
 
         <div class="detail-actions">

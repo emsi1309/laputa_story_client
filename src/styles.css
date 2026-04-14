@@ -608,6 +608,64 @@ a {
   background: #2c1d13;
 }
 
+.genre-row {
+  margin-top: 10px;
+  gap: 10px;
+}
+
+.chip.static.genre-tag {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(125, 211, 252, 0.72);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.36), rgba(37, 99, 235, 0.2));
+  color: #f8fbff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22px;
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.42);
+  box-shadow: 0 8px 16px rgba(2, 6, 23, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease;
+}
+
+.genre-row .genre-tag:nth-child(6n + 1) {
+  border-color: rgba(125, 211, 252, 0.72);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.4), rgba(37, 99, 235, 0.22));
+}
+
+.genre-row .genre-tag:nth-child(6n + 2) {
+  border-color: rgba(253, 186, 116, 0.74);
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.4), rgba(234, 88, 12, 0.22));
+}
+
+.genre-row .genre-tag:nth-child(6n + 3) {
+  border-color: rgba(244, 114, 182, 0.74);
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.38), rgba(190, 24, 93, 0.22));
+}
+
+.genre-row .genre-tag:nth-child(6n + 4) {
+  border-color: rgba(167, 139, 250, 0.74);
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.38), rgba(109, 40, 217, 0.22));
+}
+
+.genre-row .genre-tag:nth-child(6n + 5) {
+  border-color: rgba(110, 231, 183, 0.74);
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.38), rgba(5, 150, 105, 0.22));
+}
+
+.genre-row .genre-tag:nth-child(6n + 6) {
+  border-color: rgba(253, 224, 71, 0.74);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.4), rgba(202, 138, 4, 0.22));
+}
+
+.chip.static.genre-tag:hover,
+.chip.static.genre-tag:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.1) saturate(1.12);
+  box-shadow: 0 10px 18px rgba(2, 6, 23, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
 .pagination-wrap {
   margin-top: 14px;
   display: flex;
