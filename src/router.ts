@@ -12,6 +12,19 @@ import ProfileView from "./views/ProfileView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to) {
+    if (to.hash) {
+      return {
+        el: to.hash,
+        top: 84,
+      };
+    }
+
+    return {
+      top: 0,
+      left: 0,
+    };
+  },
   routes: [
     {
       path: "/",

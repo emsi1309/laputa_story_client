@@ -347,6 +347,8 @@ const storageKey = computed(
   () => `reader:${String(route.params.comicSlug)}:${String(route.params.chapterSlug)}`
 );
 
+const shouldRestoreSavedPage = computed(() => route.query.resume === "1");
+
 const getReaderCacheKey = (comicSlug: string, chapterSlug: string) =>
   `${READER_CACHE_PREFIX}${comicSlug}:${chapterSlug}`;
 
@@ -950,7 +952,15 @@ const updateCurrentPageByScroll = () => {
 
 const restoreSavedPage = async () => {
   const saved = Number(localStorage.getItem(storageKey.value) || "1");
-  currentPage.value = saved > 0 ? saved : 1;
+  const normalizedSaved = saved > 0 ? saved : 1;
+
+  if (!shouldRestoreSavedPage.value || normalizedSaved <= 1) {
+    currentPage.value = 1;
+    saveProgress(1);
+    return;
+  }
+
+  currentPage.value = normalizedSaved;
   await nextTick();
 
   const target = document.querySelector<HTMLElement>(`.reader-page[data-page-index='${currentPage.value}']`);
