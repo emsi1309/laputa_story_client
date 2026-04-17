@@ -2,57 +2,75 @@
   <header class="qq-header">
     <div class="qq-top">
       <div class="container qq-top-inner">
-        <router-link to="/" class="qq-brand" aria-label="Truyện Chill">
-          <img class="qq-brand-logo" src="/logo-truyen-chill.png" alt="Truyện Chill" />
-          <span class="qq-brand-title">Truyện Chill</span>
-        </router-link>
+        <div class="qq-top-brand-row">
+          <router-link to="/" class="qq-brand" aria-label="Truyện Chill">
+            <img class="qq-brand-logo" src="/logo-truyen-chill-header.png" alt="Truyện Chill" />
+          </router-link>
+          <button
+            v-if="isMobileViewport"
+            type="button"
+            class="qq-mobile-header-toggle"
+            :aria-expanded="showHeaderControls"
+            :aria-label="showHeaderControls ? 'Thu gọn thanh điều hướng' : 'Mở thanh điều hướng'"
+            :title="showHeaderControls ? 'Thu gọn' : 'Mở rộng'"
+            @click="toggleMobileHeaderControls"
+          >
+            <span class="qq-mobile-toggle-icon" :class="{ 'is-open': showHeaderControls }" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
+        </div>
 
-        <form class="qq-search" @submit.prevent="submitSearch">
+        <form v-show="showHeaderControls" class="qq-search" @submit.prevent="submitSearch">
           <input v-model="keyword" placeholder="Bạn muốn tìm truyện gì" />
           <button type="submit">Tìm</button>
         </form>
 
-        <div class="qq-auth" v-if="!auth.isAuthenticated">
-          <router-link to="/register" class="qq-auth-btn">Đăng ký</router-link>
-          <router-link to="/login" class="qq-auth-btn">Đăng nhập</router-link>
-        </div>
-
-        <div class="qq-auth" v-else>
-          <div class="qq-noti-wrap">
-            <button class="qq-auth-btn" type="button" @click="toggleNotificationPanel">
-              Thông báo
-              <span class="qq-noti-badge" v-if="unreadCount > 0">{{ unreadCount }}</span>
-            </button>
-            <div class="qq-noti-panel" v-if="showNotificationPanel">
-              <div class="qq-noti-head">
-                <strong>Thông báo mới</strong>
-                <button type="button" @click="markAllRead" v-if="notifications.length">Đánh dấu đã đọc</button>
-              </div>
-              <div class="qq-noti-list" v-if="notifications.length">
-                <button
-                  v-for="notification in notifications"
-                  :key="notification.id"
-                  type="button"
-                  class="qq-noti-item"
-                  :class="{ unread: !notification.read }"
-                  @click="openNotification(notification)"
-                >
-                  <span>{{ notification.title }}</span>
-                  <small>{{ notification.message }}</small>
-                </button>
-              </div>
-              <p class="qq-noti-empty" v-else>Chưa có thông báo nào.</p>
-            </div>
+        <div v-show="showHeaderControls" class="qq-top-actions">
+          <div class="qq-auth" v-if="!auth.isAuthenticated">
+            <router-link to="/register" class="qq-auth-btn">Đăng ký</router-link>
+            <router-link to="/login" class="qq-auth-btn">Đăng nhập</router-link>
           </div>
-          <router-link to="/profile" class="qq-auth-btn">{{ auth.user?.displayName || "Hồ sơ" }}</router-link>
-          <router-link to="/library" class="qq-auth-btn">Theo dõi</router-link>
-          <router-link to="/library" class="qq-auth-btn">Yêu thích</router-link>
-          <button class="qq-auth-btn" @click="logout">Đăng xuất</button>
+
+          <div class="qq-auth" v-else>
+            <div class="qq-noti-wrap">
+              <button class="qq-auth-btn" type="button" @click="toggleNotificationPanel">
+                Thông báo
+                <span class="qq-noti-badge" v-if="unreadCount > 0">{{ unreadCount }}</span>
+              </button>
+              <div class="qq-noti-panel" v-if="showNotificationPanel">
+                <div class="qq-noti-head">
+                  <strong>Thông báo mới</strong>
+                  <button type="button" @click="markAllRead" v-if="notifications.length">Đánh dấu đã đọc</button>
+                </div>
+                <div class="qq-noti-list" v-if="notifications.length">
+                  <button
+                    v-for="notification in notifications"
+                    :key="notification.id"
+                    type="button"
+                    class="qq-noti-item"
+                    :class="{ unread: !notification.read }"
+                    @click="openNotification(notification)"
+                  >
+                    <span>{{ notification.title }}</span>
+                    <small>{{ notification.message }}</small>
+                  </button>
+                </div>
+                <p class="qq-noti-empty" v-else>Chưa có thông báo nào.</p>
+              </div>
+            </div>
+            <router-link to="/profile" class="qq-auth-btn">{{ auth.user?.displayName || "Hồ sơ" }}</router-link>
+            <router-link to="/library" class="qq-auth-btn">Theo dõi</router-link>
+            <router-link to="/library" class="qq-auth-btn">Yêu thích</router-link>
+            <button class="qq-auth-btn" @click="logout">Đăng xuất</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="qq-nav-wrap">
+    <div class="qq-nav-wrap" v-show="showHeaderControls">
       <div class="container qq-nav">
         <router-link to="/">Trang chủ</router-link>
 
@@ -113,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { useAuthStore } from "../stores/auth";
@@ -128,6 +146,12 @@ const notifications = ref<NotificationItem[]>([]);
 const unreadCount = ref(0);
 const showNotificationPanel = ref(false);
 const openNavMenu = ref<"genre" | "ranking" | null>(null);
+const isMobileViewport = ref(false);
+const isMobileHeaderOpen = ref(true);
+
+const MOBILE_BREAKPOINT = 980;
+
+const showHeaderControls = computed(() => !isMobileViewport.value || isMobileHeaderOpen.value);
 
 const submitSearch = () => {
   router.push({ name: "search", query: { q: keyword.value || undefined } });
@@ -139,6 +163,39 @@ const closeNavMenu = () => {
 
 const toggleNavMenu = (menu: "genre" | "ranking") => {
   openNavMenu.value = openNavMenu.value === menu ? null : menu;
+};
+
+const detectMobileViewport = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const nextIsMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+  if (nextIsMobile === isMobileViewport.value) {
+    return;
+  }
+
+  isMobileViewport.value = nextIsMobile;
+  if (nextIsMobile) {
+    isMobileHeaderOpen.value = false;
+    closeNavMenu();
+    showNotificationPanel.value = false;
+    return;
+  }
+
+  isMobileHeaderOpen.value = true;
+};
+
+const toggleMobileHeaderControls = () => {
+  if (!isMobileViewport.value) {
+    return;
+  }
+
+  isMobileHeaderOpen.value = !isMobileHeaderOpen.value;
+  if (!isMobileHeaderOpen.value) {
+    closeNavMenu();
+    showNotificationPanel.value = false;
+  }
 };
 
 const handleDocumentClick = (event: MouseEvent) => {
@@ -217,7 +274,9 @@ const loadGenres = async () => {
 onMounted(loadGenres);
 
 onMounted(async () => {
+  detectMobileViewport();
   document.addEventListener("click", handleDocumentClick);
+  window.addEventListener("resize", detectMobileViewport);
 
   if (auth.isAuthenticated) {
     await loadNotifications();
@@ -226,12 +285,17 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("click", handleDocumentClick);
+  window.removeEventListener("resize", detectMobileViewport);
 });
 
 watch(
   () => route.fullPath,
   () => {
     closeNavMenu();
+    if (isMobileViewport.value) {
+      isMobileHeaderOpen.value = false;
+      showNotificationPanel.value = false;
+    }
   }
 );
 </script>

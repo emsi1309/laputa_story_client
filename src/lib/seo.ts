@@ -14,7 +14,7 @@ const DEFAULT_TITLE = "Truyện Chill - Đọc truyện tranh miễn phí mỗi 
 const DEFAULT_DESCRIPTION =
   "Đọc truyện tranh miễn phí, cập nhật nhanh chương mới mỗi ngày tại Truyện Chill.";
 const DEFAULT_KEYWORDS = "truyện tranh, đọc truyện online, truyện tranh miễn phí, truyện chill";
-const DEFAULT_IMAGE = "/logo-truyen-chill.png";
+const DEFAULT_IMAGE = "/logo-truyen-chill-no-bg.png";
 const STRUCTURED_DATA_SELECTOR = "script[data-seo=structured-data]";
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
 
