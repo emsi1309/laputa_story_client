@@ -251,8 +251,17 @@ a {
   user-select: none;
 }
 
+.qq-nav-trigger {
+  border: none;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
 .qq-nav-dropdown:hover .qq-nav-label,
-.qq-nav-dropdown:focus-within .qq-nav-label {
+.qq-nav-dropdown:focus-within .qq-nav-label,
+.qq-nav-dropdown.is-open .qq-nav-label {
   color: #f97316;
 }
 
@@ -264,6 +273,8 @@ a {
   display: grid;
   gap: 2px;
   padding: 8px;
+  max-height: min(340px, 72vh);
+  overflow-y: auto;
   border-radius: 10px;
   border: 1px solid #2b354c;
   background: #111827;
@@ -273,6 +284,11 @@ a {
   pointer-events: none;
   transition: opacity 0.16s ease, transform 0.16s ease;
   z-index: 35;
+}
+
+.qq-nav-dropdown-right .qq-nav-menu {
+  left: auto;
+  right: 0;
 }
 
 .qq-nav-menu a {
@@ -287,10 +303,20 @@ a {
 }
 
 .qq-nav-dropdown:hover .qq-nav-menu,
-.qq-nav-dropdown:focus-within .qq-nav-menu {
+.qq-nav-dropdown:focus-within .qq-nav-menu,
+.qq-nav-dropdown.is-open .qq-nav-menu {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+}
+
+.qq-nav-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.qq-nav-menu::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
 }
 
 .section-block {
@@ -1347,6 +1373,52 @@ a {
   cursor: pointer;
 }
 
+.about-card {
+  border: 1px solid #273047;
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.82)),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.3), transparent 40%);
+  padding: clamp(18px, 3vw, 28px);
+}
+
+.about-title {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(30px, 4.2vw, 42px);
+  line-height: 1.15;
+}
+
+.about-lead {
+  margin: 14px 0 0;
+  color: #dbeafe;
+  font-size: 17px;
+}
+
+.about-card p {
+  color: #cbd5e1;
+  line-height: 1.7;
+}
+
+.about-card h2 {
+  margin: 20px 0 10px;
+  color: #f8fafc;
+}
+
+.about-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #dbeafe;
+  display: grid;
+  gap: 8px;
+}
+
+.about-note {
+  margin-top: 16px;
+  border-left: 3px solid #60a5fa;
+  padding-left: 12px;
+}
+
 @media (max-width: 1200px) {
   .comic-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1378,6 +1450,10 @@ a {
 
   .qq-nav {
     padding: 8px 0;
+  }
+
+  .qq-nav-menu {
+    max-height: min(340px, 62vh);
   }
 
   .comic-grid {

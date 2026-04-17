@@ -183,10 +183,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { resolvePublicImageUrl } from "../lib/image";
+import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
 import type { CommentItem, ComicDetail, FavoriteState, UserRating } from "../types";
 
@@ -294,6 +295,83 @@ const threadedComments = computed<ThreadedCommentItem[]>(() => {
 const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
 const formatRating = (value: number) => (value || 0).toFixed(1);
 
+const statusLabelMap: Record<string, string> = {
+  ONGOING: "Đang tiến hành",
+  COMPLETED: "Hoàn thành",
+  HIATUS: "Tạm ngưng",
+};
+
+const toPlainText = (value: string | null | undefined, maxLength: number) => {
+  const normalized = (value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "Đọc truyện tranh miễn phí, cập nhật chương mới liên tục tại Truyện Chill.";
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+};
+
+const buildComicStructuredData = (comic: ComicDetail) => {
+  const baseUrl = window.location.origin;
+  const chapterCount = comic.chapters.length;
+  const latest = latestChapter.value;
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "ComicSeries",
+    name: comic.title,
+    url: `${baseUrl}/comic/${comic.slug}`,
+    description: toPlainText(comic.description, 240),
+    image: detailCoverSource.value,
+    inLanguage: "vi",
+    author: comic.author ? { "@type": "Person", name: comic.author } : undefined,
+    genre: comic.genres.map((genre) => genre.name),
+    numberOfItems: chapterCount,
+    dateModified: comic.updatedAt,
+    potentialAction: latest
+      ? {
+          "@type": "ReadAction",
+          target: `${baseUrl}/read/${comic.slug}/${latest.slug}`,
+        }
+      : undefined,
+  };
+};
+
+const applyComicSeo = () => {
+  if (!detail.value) {
+    return;
+  }
+
+  const comic = detail.value;
+  const normalizedStatus = statusLabelMap[comic.status] || comic.status;
+  const genres = comic.genres.map((genre) => genre.name).filter(Boolean);
+  const description = toPlainText(comic.description, 170);
+  const keywordParts = [
+    comic.title,
+    comic.author || "",
+    ...genres,
+    "đọc truyện tranh",
+    "truyện tranh miễn phí",
+    "truyện chill",
+  ].filter((item) => item && item.trim().length > 0);
+
+  updateDocumentSeo({
+    title: `${comic.title} - ${normalizedStatus}`,
+    description,
+    keywords: keywordParts.join(", "),
+    path: `/comic/${comic.slug}`,
+    image: detailCoverSource.value,
+    type: "book",
+    structuredData: buildComicStructuredData(comic),
+  });
+};
+
 const selectedRatingValue = computed({
   get: () => (selectedRating.value == null ? "" : String(selectedRating.value)),
   set: (value: string) => {
@@ -356,6 +434,8 @@ const loadDetail = async () => {
       following.value = false;
     }
   }
+
+  applyComicSeo();
 };
 
 const loadSocialState = async () => {
@@ -624,8 +704,22 @@ const commentRoleClass = (role: string | null | undefined) => {
   return "comment-role-guest";
 };
 
-onMounted(async () => {
+const loadPage = async () => {
   await loadDetail();
   await Promise.all([loadSocialState(), loadComments()]);
+};
+
+onMounted(async () => {
+  await loadPage();
 });
+
+watch(
+  () => route.params.slug,
+  async (nextSlug, previousSlug) => {
+    if (!nextSlug || nextSlug === previousSlug) {
+      return;
+    }
+    await loadPage();
+  }
+);
 </script>

@@ -56,26 +56,44 @@
       <div class="container qq-nav">
         <router-link to="/">Trang chủ</router-link>
 
-        <div class="qq-nav-dropdown">
-          <span class="qq-nav-label">Thể loại ▾</span>
+        <div class="qq-nav-dropdown" :class="{ 'is-open': openNavMenu === 'genre' }">
+          <button
+            type="button"
+            class="qq-nav-label qq-nav-trigger"
+            :aria-expanded="openNavMenu === 'genre'"
+            aria-haspopup="menu"
+            @click="toggleNavMenu('genre')"
+          >
+            Thể loại ▾
+          </button>
           <div class="qq-nav-menu">
             <router-link
               v-for="genre in genres"
               :key="`genre-menu-${genre.id}`"
               :to="{ name: 'search', query: { genre: genre.id } }"
+              @click="closeNavMenu"
             >
               {{ genre.name }}
             </router-link>
           </div>
         </div>
 
-        <div class="qq-nav-dropdown">
-          <span class="qq-nav-label">Xếp hạng ▾</span>
+        <div class="qq-nav-dropdown qq-nav-dropdown-right" :class="{ 'is-open': openNavMenu === 'ranking' }">
+          <button
+            type="button"
+            class="qq-nav-label qq-nav-trigger"
+            :aria-expanded="openNavMenu === 'ranking'"
+            aria-haspopup="menu"
+            @click="toggleNavMenu('ranking')"
+          >
+            Xếp hạng ▾
+          </button>
           <div class="qq-nav-menu">
             <router-link
               v-for="genre in genres"
               :key="`rank-menu-${genre.id}`"
               :to="{ name: 'search', query: { genre: genre.id } }"
+              @click="closeNavMenu"
             >
               Top {{ genre.name }}
             </router-link>
@@ -83,6 +101,7 @@
         </div>
 
         <router-link to="/search">Tìm truyện</router-link>
+        <router-link to="/about">Giới thiệu</router-link>
         <router-link to="/library">Lịch sử</router-link>
         <router-link to="/library">Theo dõi</router-link>
         <a href="https://discord.gg" target="_blank" rel="noreferrer">Discord</a>
@@ -94,22 +113,45 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import type { GenreItem, NotificationItem, NotificationPage } from "../types";
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
 const keyword = ref("");
 const genres = ref<GenreItem[]>([]);
 const notifications = ref<NotificationItem[]>([]);
 const unreadCount = ref(0);
 const showNotificationPanel = ref(false);
+const openNavMenu = ref<"genre" | "ranking" | null>(null);
 
 const submitSearch = () => {
   router.push({ name: "search", query: { q: keyword.value || undefined } });
+};
+
+const closeNavMenu = () => {
+  openNavMenu.value = null;
+};
+
+const toggleNavMenu = (menu: "genre" | "ranking") => {
+  openNavMenu.value = openNavMenu.value === menu ? null : menu;
+};
+
+const handleDocumentClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null;
+  if (!target) {
+    return;
+  }
+
+  if (target.closest(".qq-nav-dropdown")) {
+    return;
+  }
+
+  closeNavMenu();
 };
 
 const logout = () => {
@@ -175,8 +217,21 @@ const loadGenres = async () => {
 onMounted(loadGenres);
 
 onMounted(async () => {
+  document.addEventListener("click", handleDocumentClick);
+
   if (auth.isAuthenticated) {
     await loadNotifications();
   }
 });
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", handleDocumentClick);
+});
+
+watch(
+  () => route.fullPath,
+  () => {
+    closeNavMenu();
+  }
+);
 </script>
