@@ -4,6 +4,7 @@
     <main class="site-main">
       <router-view />
     </main>
+    <SiteFooter v-if="!isReaderRoute" />
   </div>
 </template>
 
@@ -11,6 +12,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import SiteHeader from "../components/SiteHeader.vue";
+import SiteFooter from "../components/SiteFooter.vue";
 
 const route = useRoute();
 const isHeaderVisible = ref(true);
