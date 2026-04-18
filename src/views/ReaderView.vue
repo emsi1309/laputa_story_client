@@ -59,7 +59,7 @@
           loading="lazy"
           decoding="async"
           referrerpolicy="no-referrer"
-          @error="markImageAsBlocked(page.id, page.imageUrl)"
+          @error="markImageAsBlocked(page)"
         />
       </figure>
     </div>
@@ -210,7 +210,7 @@ const readerData = ref<ReaderData | null>(null);
 const chapterOptions = ref<ChapterBrief[]>([]);
 const selectedChapterSlug = ref("");
 const currentPage = ref(1);
-const imageFallbackMap = ref<Record<number, boolean>>({});
+const imageFallbackMap = ref<Record<number, number>>({});
 const blockedImageHosts = ref<Set<string>>(new Set());
 const swipeStartX = ref<number | null>(null);
 const swipeStartY = ref<number | null>(null);
@@ -226,7 +226,7 @@ const chapterReportDetails = ref("");
 const readerNotice = ref("");
 let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
-const READER_CACHE_PREFIX = "reader_cache:";
+const READER_CACHE_PREFIX = "reader_cache:v2:";
 const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
 const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -248,6 +248,8 @@ const chapterExitTracked = ref(false);
 type ThreadedCommentItem = CommentItem & {
   depth: number;
 };
+
+type ReaderPageItem = ReaderData["pages"][number];
 
 const toTimestamp = (value: string) => {
   const time = new Date(value).getTime();
@@ -635,6 +637,106 @@ const parseExternalImageHost = (rawUrl: string) => {
   }
 };
 
+const LEGACY_STORAGE_PATH_PREFIX = "/net-truyen/";
+const API_STORAGE_PATH_PREFIX = "/api/public/storage";
+
+const normalizeServerStoredImageUrl = (rawUrl: string) => {
+  if (!rawUrl) {
+    return rawUrl;
+  }
+
+  const normalizedRawUrl = rawUrl.trim();
+  if (!normalizedRawUrl) {
+    return normalizedRawUrl;
+  }
+
+  if (normalizedRawUrl.startsWith(LEGACY_STORAGE_PATH_PREFIX)) {
+    return `${API_STORAGE_PATH_PREFIX}/${normalizedRawUrl.substring(LEGACY_STORAGE_PATH_PREFIX.length)}`;
+  }
+
+  try {
+    const parsed = new URL(normalizedRawUrl, window.location.origin);
+    const currentHost = window.location.hostname.toLowerCase();
+    if (parsed.hostname.toLowerCase() !== currentHost) {
+      return normalizedRawUrl;
+    }
+
+    if (!parsed.pathname.startsWith(LEGACY_STORAGE_PATH_PREFIX)) {
+      return normalizedRawUrl;
+    }
+
+    const mappedPath = `${API_STORAGE_PATH_PREFIX}/${parsed.pathname.substring(LEGACY_STORAGE_PATH_PREFIX.length)}`;
+    if (/^https?:\/\//i.test(normalizedRawUrl)) {
+      return `${parsed.protocol}//${parsed.host}${mappedPath}${parsed.search}${parsed.hash}`;
+    }
+
+    return `${mappedPath}${parsed.search}${parsed.hash}`;
+  } catch {
+    return normalizedRawUrl;
+  }
+};
+
+const isLikelyStorageUrl = (rawUrl: string) => {
+  if (!rawUrl) {
+    return false;
+  }
+
+  const normalizedRaw = rawUrl.trim();
+  if (!normalizedRaw) {
+    return false;
+  }
+
+  if (
+    normalizedRaw.startsWith(API_STORAGE_PATH_PREFIX)
+    || normalizedRaw.startsWith(LEGACY_STORAGE_PATH_PREFIX)
+  ) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalizedRaw, window.location.origin);
+    const currentHost = window.location.hostname.toLowerCase();
+    if (parsed.hostname.toLowerCase() !== currentHost) {
+      return false;
+    }
+
+    return (
+      parsed.pathname.startsWith(API_STORAGE_PATH_PREFIX)
+      || parsed.pathname.startsWith(LEGACY_STORAGE_PATH_PREFIX)
+    );
+  } catch {
+    return false;
+  }
+};
+
+const resolveImageCandidates = (page: ReaderPageItem) => {
+  const candidates: string[] = [];
+
+  const primary = normalizeServerStoredImageUrl(page.imageUrl);
+  if (primary) {
+    candidates.push(primary);
+  }
+
+  const sourceRaw = page.sourceImageUrl?.trim() || "";
+  const source = sourceRaw ? normalizeServerStoredImageUrl(sourceRaw) : "";
+  if (isLikelyStorageUrl(primary) && source && source !== primary) {
+    candidates.push(source);
+  }
+
+  return candidates;
+};
+
+const resolveCurrentRawImageSource = (page: ReaderPageItem) => {
+  const candidates = resolveImageCandidates(page);
+  if (!candidates.length) {
+    return normalizeServerStoredImageUrl(page.imageUrl);
+  }
+
+  const fallbackIndex = imageFallbackMap.value[page.id] ?? 0;
+  const safeIndex = Math.max(0, Math.min(fallbackIndex, candidates.length - 1));
+  return candidates[safeIndex];
+};
+
 const readBlockedImageHosts = () => {
   try {
     const raw = localStorage.getItem(BLOCKED_IMAGE_HOSTS_KEY);
@@ -679,10 +781,11 @@ const registerBlockedImageHost = (rawUrl: string) => {
 };
 
 const resolveImageSource = (page: ReaderData["pages"][number]) => {
-  if (shouldUseProxyByDefault(page.imageUrl) || imageFallbackMap.value[page.id]) {
-    return `${API_BASE_URL}/api/public/image-proxy?url=${encodeURIComponent(page.imageUrl)}`;
+  const rawSource = resolveCurrentRawImageSource(page);
+  if (shouldUseProxyByDefault(rawSource)) {
+    return `${API_BASE_URL}/api/public/image-proxy?url=${encodeURIComponent(rawSource)}`;
   }
-  return page.imageUrl;
+  return rawSource;
 };
 
 const shouldUseProxyByDefault = (rawUrl: string) => {
@@ -694,16 +797,23 @@ const shouldUseProxyByDefault = (rawUrl: string) => {
   return blockedImageHosts.value.has(host);
 };
 
-const markImageAsBlocked = (pageId: number, rawUrl: string) => {
-  if (imageFallbackMap.value[pageId]) {
+const markImageAsBlocked = (page: ReaderPageItem) => {
+  const currentRawSource = resolveCurrentRawImageSource(page);
+  const externalHost = parseExternalImageHost(currentRawSource);
+  if (externalHost && !blockedImageHosts.value.has(externalHost)) {
+    registerBlockedImageHost(currentRawSource);
     return;
   }
 
-  registerBlockedImageHost(rawUrl);
+  const candidates = resolveImageCandidates(page);
+  const currentIndex = imageFallbackMap.value[page.id] ?? 0;
+  if (currentIndex >= candidates.length - 1) {
+    return;
+  }
 
   imageFallbackMap.value = {
     ...imageFallbackMap.value,
-    [pageId]: true,
+    [page.id]: currentIndex + 1,
   };
 };
 

@@ -70,6 +70,7 @@ export type ReaderData = {
     id: number;
     pageIndex: number;
     imageUrl: string;
+    sourceImageUrl: string | null;
   }[];
   prevChapter: {
     id: number;
