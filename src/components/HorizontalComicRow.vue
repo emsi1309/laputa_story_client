@@ -14,7 +14,7 @@
       @touchend.passive="resumeAutoScrollSoon"
     >
       <div class="qq-row-item" v-for="comic in comics" :key="comic.id">
-        <ComicCard :comic="comic" />
+        <ComicCard :comic="comic" :analytics-context="analyticsContext" />
       </div>
     </div>
 
@@ -29,6 +29,7 @@ import type { ComicCard as ComicCardType } from "../types";
 
 const props = defineProps<{
   comics: ComicCardType[];
+  analyticsContext?: string;
 }>();
 
 const trackRef = ref<HTMLDivElement | null>(null);

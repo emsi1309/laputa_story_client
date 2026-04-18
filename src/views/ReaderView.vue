@@ -197,6 +197,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { trackAnalyticsEvent } from "../lib/analytics";
 import { getApiBaseUrl } from "../lib/runtimeConfig";
 import { useAuthStore } from "../stores/auth";
 import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
@@ -240,6 +241,9 @@ const HEADER_TOGGLE_SETTLE_MS = 220;
 const lastScrollY = ref(0);
 const isReaderHeaderVisible = ref(true);
 const headerAutoPauseUntil = ref(0);
+const chapterStartedAtMs = ref(0);
+const chapterCompletedTracked = ref(false);
+const chapterExitTracked = ref(false);
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -263,6 +267,92 @@ const setReaderHeaderVisibility = (visible: boolean, force = false) => {
   headerAutoPauseUntil.value = performance.now() + HEADER_TOGGLE_SETTLE_MS;
   lastScrollY.value = window.scrollY;
   emitReaderHeaderVisibility(visible);
+};
+
+const currentReaderPath = () => {
+  if (!readerData.value) {
+    return "/read";
+  }
+
+  return `/read/${readerData.value.comic.slug}/${readerData.value.chapter.slug}`;
+};
+
+const currentReaderProgressPercent = () => {
+  if (!readerData.value || !readerData.value.pages.length) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, Math.round((currentPage.value / readerData.value.pages.length) * 100))
+  );
+};
+
+const currentReaderDurationSeconds = () => {
+  if (!chapterStartedAtMs.value) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((Date.now() - chapterStartedAtMs.value) / 1000));
+};
+
+const startChapterAnalyticsSession = () => {
+  if (!readerData.value) {
+    return;
+  }
+
+  chapterStartedAtMs.value = Date.now();
+  chapterCompletedTracked.value = false;
+  chapterExitTracked.value = false;
+
+  trackAnalyticsEvent("CHAPTER_OPEN", {
+    pagePath: currentReaderPath(),
+    context: "reader_open",
+    source: "internal",
+    comicSlug: readerData.value.comic.slug,
+    chapterSlug: readerData.value.chapter.slug,
+  });
+};
+
+const trackChapterCompletion = () => {
+  if (!readerData.value || chapterCompletedTracked.value) {
+    return;
+  }
+
+  chapterCompletedTracked.value = true;
+  chapterExitTracked.value = true;
+
+  trackAnalyticsEvent("CHAPTER_COMPLETE", {
+    pagePath: currentReaderPath(),
+    context: "reader_complete",
+    source: "internal",
+    comicSlug: readerData.value.comic.slug,
+    chapterSlug: readerData.value.chapter.slug,
+    durationSeconds: currentReaderDurationSeconds(),
+    progressPercent: 100,
+  });
+};
+
+const trackChapterExitIfNeeded = () => {
+  if (!readerData.value || chapterExitTracked.value) {
+    return;
+  }
+
+  chapterExitTracked.value = true;
+  const progress = currentReaderProgressPercent();
+  if (progress >= 98) {
+    return;
+  }
+
+  trackAnalyticsEvent("CHAPTER_EXIT", {
+    pagePath: currentReaderPath(),
+    context: "reader_exit",
+    source: "internal",
+    comicSlug: readerData.value.comic.slug,
+    chapterSlug: readerData.value.chapter.slug,
+    durationSeconds: currentReaderDurationSeconds(),
+    progressPercent: progress,
+  });
 };
 
 const threadedChapterComments = computed<ThreadedCommentItem[]>(() => {
@@ -947,6 +1037,10 @@ const updateCurrentPageByScroll = () => {
   if (active !== currentPage.value) {
     currentPage.value = active;
     saveProgress(active);
+
+    if (readerData.value && active >= readerData.value.pages.length) {
+      trackChapterCompletion();
+    }
   }
 };
 
@@ -989,6 +1083,7 @@ const loadReader = async () => {
 
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
+  startChapterAnalyticsSession();
 
   await loadChapterOptions(data.comic.slug);
   await loadChapterComments();
@@ -1053,6 +1148,7 @@ const handleReaderKeydown = (event: KeyboardEvent) => {
 watch(
   () => [route.params.comicSlug, route.params.chapterSlug],
   async () => {
+    trackChapterExitIfNeeded();
     setReaderHeaderVisibility(true, true);
     lastScrollY.value = 0;
     window.scrollTo({ top: 0 });
@@ -1070,6 +1166,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  trackChapterExitIfNeeded();
   setReaderHeaderVisibility(true, true);
   window.removeEventListener("scroll", updateCurrentPageByScroll);
   window.removeEventListener("keydown", handleReaderKeydown);

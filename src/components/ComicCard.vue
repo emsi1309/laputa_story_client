@@ -1,6 +1,6 @@
 <template>
   <article class="comic-card qq-card">
-    <router-link :to="`/comic/${comic.slug}`" class="cover-wrap qq-cover-wrap">
+    <router-link :to="`/comic/${comic.slug}`" class="cover-wrap qq-cover-wrap" @click="trackComicClick">
       <img :src="coverSource" :alt="comic.title" loading="lazy" />
       <div class="qq-card-badges">
         <span class="qq-badge qq-badge-time">{{ timeAgo }}</span>
@@ -14,6 +14,7 @@
         :data-full-title="comic.title"
         :title="comic.title"
         :aria-label="comic.title"
+        @click="trackComicClick"
       >
         {{ comic.title }}
       </router-link>
@@ -31,11 +32,13 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { trackAnalyticsEvent } from "../lib/analytics";
 import { resolvePublicImageUrl } from "../lib/image";
 import type { ComicCard } from "../types";
 
 const props = defineProps<{
   comic: ComicCard;
+  analyticsContext?: string;
 }>();
 
 const coverSource = computed(() => resolvePublicImageUrl(props.comic.coverUrl) || fallbackCover);
@@ -63,6 +66,16 @@ const timeAgo = computed(() => {
   const days = Math.floor(diffMs / day);
   return `${days} ngày trước`;
 });
+
+const trackComicClick = () => {
+  trackAnalyticsEvent("COMIC_CLICK", {
+    pagePath: typeof window !== "undefined" ? window.location.pathname : "/",
+    context: props.analyticsContext || "catalog",
+    source: "internal",
+    comicSlug: props.comic.slug,
+    chapterSlug: props.comic.latestChapter?.slug || undefined,
+  });
+};
 
 const fallbackCover =
   "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";

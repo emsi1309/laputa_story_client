@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import PublicLayout from "./layouts/PublicLayout.vue";
 import HomeView from "./views/HomeView.vue";
@@ -10,6 +10,7 @@ import RegisterView from "./views/RegisterView.vue";
 import LibraryView from "./views/LibraryView.vue";
 import ProfileView from "./views/ProfileView.vue";
 import AboutView from "./views/AboutView.vue";
+import { trackPageView } from "./lib/analytics";
 import { updateDocumentSeo } from "./lib/seo";
 
 declare module "vue-router" {
@@ -61,6 +62,7 @@ const router = createRouter({
             seoTitle: "Tìm kiếm truyện tranh",
             seoDescription: "Tìm truyện theo tên, tác giả, thể loại, năm phát hành và trạng thái tại Truyện Chill.",
             seoKeywords: "tìm truyện, tìm kiếm truyện tranh, lọc truyện",
+            seoNoindex: true,
           },
         },
         {
@@ -156,7 +158,30 @@ router.beforeEach((to) => {
   return true;
 });
 
-router.afterEach((to) => {
+const firstQueryValue = (value: unknown) => (Array.isArray(value) ? value[0] : value);
+
+const resolveTrafficSource = (to: RouteLocationNormalizedLoaded, from: RouteLocationNormalizedLoaded) => {
+  const utmSourceRaw = firstQueryValue(to.query.utm_source);
+  if (typeof utmSourceRaw === "string" && utmSourceRaw.trim()) {
+    return `utm:${utmSourceRaw.trim().slice(0, 80)}`;
+  }
+
+  if (from?.name) {
+    return "internal";
+  }
+
+  if (typeof document !== "undefined" && document.referrer) {
+    try {
+      return new URL(document.referrer).hostname.toLowerCase();
+    } catch {
+      return "referrer";
+    }
+  }
+
+  return "direct";
+};
+
+router.afterEach((to, from) => {
   let title = to.meta.seoTitle;
   let description = to.meta.seoDescription;
   let keywords = to.meta.seoKeywords;
@@ -199,6 +224,17 @@ router.afterEach((to) => {
     path: to.fullPath,
     noindex: Boolean(to.meta.seoNoindex),
     structuredData,
+  });
+
+  const internalReferrer = from?.fullPath || undefined;
+  const externalReferrer =
+    !from?.name && typeof document !== "undefined" ? document.referrer || undefined : undefined;
+
+  trackPageView({
+    pagePath: to.fullPath,
+    referrer: internalReferrer || externalReferrer,
+    source: resolveTrafficSource(to, from),
+    context: String(to.name || "route"),
   });
 });
 

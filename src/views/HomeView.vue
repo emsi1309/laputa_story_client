@@ -25,14 +25,14 @@
     <div class="section-head">
       <h2 class="section-title">Truyện Hay</h2>
     </div>
-    <HorizontalComicRow :comics="featuredComics" />
+    <HorizontalComicRow :comics="featuredComics" analytics-context="home_hot" />
   </section>
 
   <section class="container section-block">
     <div class="section-head">
       <h2 class="section-title">Độc Quyền Truyện Chill</h2>
     </div>
-    <HorizontalComicRow :comics="exclusiveComics" />
+    <HorizontalComicRow :comics="exclusiveComics" analytics-context="home_exclusive" />
   </section>
 
   <section class="container section-block">
@@ -56,7 +56,12 @@
     </div>
 
     <div class="comic-grid">
-      <ComicCardItem v-for="comic in comics" :key="comic.id" :comic="comic" />
+      <ComicCardItem
+        v-for="comic in comics"
+        :key="comic.id"
+        :comic="comic"
+        analytics-context="home_latest"
+      />
     </div>
 
     <PaginationControl :page="page" :total-pages="totalPages" @change="changePage" />
@@ -67,6 +72,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../lib/api";
+import { trackAnalyticsEvent } from "../lib/analytics";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
@@ -143,6 +149,14 @@ const changePage = (nextPage: number) => {
 };
 
 const goSearch = () => {
+  const normalizedKeyword = keyword.value.trim();
+  trackAnalyticsEvent("SEARCH_SUBMIT", {
+    pagePath: "/",
+    context: "home_search",
+    source: "internal",
+    searchQueryLength: normalizedKeyword.length,
+  });
+
   router.push({ name: "search", query: { q: keyword.value || undefined } });
 };
 

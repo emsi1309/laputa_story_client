@@ -26,7 +26,12 @@
     <p class="search-info" v-if="query">Kết quả cho từ khóa: "{{ query }}"</p>
 
     <div class="comic-grid">
-      <ComicCardItem v-for="comic in comics" :key="comic.id" :comic="comic" />
+      <ComicCardItem
+        v-for="comic in comics"
+        :key="comic.id"
+        :comic="comic"
+        analytics-context="search_results"
+      />
     </div>
 
     <PaginationControl :page="page" :total-pages="totalPages" @change="changePage" />
@@ -37,6 +42,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { trackAnalyticsEvent } from "../lib/analytics";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import PaginationControl from "../components/PaginationControl.vue";
@@ -90,6 +96,14 @@ const loadResult = async () => {
 };
 
 const submitSearch = () => {
+  const normalizedQuery = query.value.trim();
+  trackAnalyticsEvent("SEARCH_SUBMIT", {
+    pagePath: "/search",
+    context: "search_form",
+    source: "internal",
+    searchQueryLength: normalizedQuery.length,
+  });
+
   page.value = 0;
   router.push({
     name: "search",

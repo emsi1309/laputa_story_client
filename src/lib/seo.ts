@@ -10,6 +10,7 @@ type SeoOptions = {
 };
 
 export const SITE_NAME = "Truyện Chill";
+const DEFAULT_SITE_ORIGIN = "https://truyenchill.online";
 const DEFAULT_TITLE = "Truyện Chill - Đọc truyện tranh miễn phí mỗi ngày";
 const DEFAULT_DESCRIPTION =
   "Đọc truyện tranh miễn phí, cập nhật nhanh chương mới mỗi ngày tại Truyện Chill.";
@@ -17,18 +18,58 @@ const DEFAULT_KEYWORDS = "truyện tranh, đọc truyện online, truyện tranh
 const DEFAULT_IMAGE = "/logo-truyen-chill-no-bg.png";
 const STRUCTURED_DATA_SELECTOR = "script[data-seo=structured-data]";
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
+const TRACKING_PARAM_REGEX = /^(utm_|fbclid$|gclid$|msclkid$|ref$|source$|si$)/i;
+
+const getSiteOrigin = () => {
+  const configured = import.meta.env.VITE_SITE_URL?.trim();
+  if (configured && ABSOLUTE_URL_REGEX.test(configured)) {
+    return configured.replace(/\/$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return DEFAULT_SITE_ORIGIN;
+};
+
+const normalizePathname = (pathname: string) => {
+  if (pathname.length <= 1) {
+    return pathname || "/";
+  }
+  return pathname.replace(/\/+$/, "");
+};
+
+const buildCanonicalUrl = (path: string) => {
+  const siteOrigin = getSiteOrigin();
+  const resolved = ABSOLUTE_URL_REGEX.test(path)
+    ? new URL(path)
+    : new URL(path.startsWith("/") ? path : `/${path}`, siteOrigin);
+
+  const canonical = new URL(`${normalizePathname(resolved.pathname)}${resolved.search}`, siteOrigin);
+  canonical.hash = "";
+
+  const toDelete: string[] = [];
+  canonical.searchParams.forEach((_, key) => {
+    if (TRACKING_PARAM_REGEX.test(key)) {
+      toDelete.push(key);
+    }
+  });
+
+  for (const key of toDelete) {
+    canonical.searchParams.delete(key);
+  }
+
+  return canonical.toString();
+};
 
 const resolveAbsoluteUrl = (value: string) => {
   if (ABSOLUTE_URL_REGEX.test(value)) {
     return value;
   }
 
-  if (typeof window === "undefined") {
-    return value;
-  }
-
   const normalizedPath = value.startsWith("/") ? value : `/${value}`;
-  return new URL(normalizedPath, window.location.origin).toString();
+  return new URL(normalizedPath, getSiteOrigin()).toString();
 };
 
 const ensureMetaTag = (selector: string, key: "name" | "property", value: string) => {
@@ -59,6 +100,18 @@ const setCanonical = (href: string) => {
     document.head.appendChild(canonical);
   }
   canonical.setAttribute("href", href);
+};
+
+const setAlternate = (href: string, hreflang: string) => {
+  const selector = `link[rel=\"alternate\"][hreflang=\"${hreflang}\"]`;
+  let alternate = document.head.querySelector<HTMLLinkElement>(selector);
+  if (!alternate) {
+    alternate = document.createElement("link");
+    alternate.setAttribute("rel", "alternate");
+    alternate.setAttribute("hreflang", hreflang);
+    document.head.appendChild(alternate);
+  }
+  alternate.setAttribute("href", href);
 };
 
 const setStructuredData = (data: unknown) => {
@@ -95,8 +148,9 @@ export const updateDocumentSeo = (options: SeoOptions = {}) => {
   const description = options.description?.trim() || DEFAULT_DESCRIPTION;
   const keywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
   const path = options.path || window.location.pathname + window.location.search;
-  const canonicalUrl = resolveAbsoluteUrl(path);
+  const canonicalUrl = buildCanonicalUrl(path);
   const imageUrl = resolveAbsoluteUrl(options.image || DEFAULT_IMAGE);
+  const secureImageUrl = imageUrl.replace(/^http:/i, "https:");
   const robotsValue = options.noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large";
 
   document.title = fullTitle;
@@ -104,6 +158,8 @@ export const updateDocumentSeo = (options: SeoOptions = {}) => {
   setMetaByName("description", description);
   setMetaByName("keywords", keywords);
   setMetaByName("robots", robotsValue);
+  setMetaByName("googlebot", robotsValue);
+  setMetaByName("author", SITE_NAME);
 
   setMetaByProperty("og:site_name", SITE_NAME);
   setMetaByProperty("og:locale", "vi_VN");
@@ -111,13 +167,17 @@ export const updateDocumentSeo = (options: SeoOptions = {}) => {
   setMetaByProperty("og:title", fullTitle);
   setMetaByProperty("og:description", description);
   setMetaByProperty("og:url", canonicalUrl);
-  setMetaByProperty("og:image", imageUrl);
+  setMetaByProperty("og:image", secureImageUrl);
+  setMetaByProperty("og:image:secure_url", secureImageUrl);
+  setMetaByProperty("og:image:alt", fullTitle);
 
   setMetaByName("twitter:card", "summary_large_image");
   setMetaByName("twitter:title", fullTitle);
   setMetaByName("twitter:description", description);
-  setMetaByName("twitter:image", imageUrl);
+  setMetaByName("twitter:image", secureImageUrl);
 
   setCanonical(canonicalUrl);
+  setAlternate(canonicalUrl, "vi-VN");
+  setAlternate(canonicalUrl, "x-default");
   setStructuredData(options.structuredData);
 };
