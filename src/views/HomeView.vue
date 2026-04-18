@@ -83,6 +83,9 @@ type HomePayload = {
   latestUpdated?: ComicCard[];
   hot?: ComicCard[];
   exclusive?: ComicCard[];
+  latestTotalElements?: number;
+  latestTotalPages?: number;
+  latestPageSize?: number;
 };
 
 const router = useRouter();
@@ -117,8 +120,10 @@ const exclusiveComics = computed(() => exclusive.value.slice(0, 21));
 
 const loadHome = async () => {
   const { data } = await api.get<HomePayload>("/api/public/home");
+  comics.value = data.latestUpdated || [];
   hot.value = data.hot || [];
   exclusive.value = data.exclusive || data.latestUpdated || [];
+  totalPages.value = data.latestTotalPages || 1;
 };
 
 const loadGenres = async () => {
@@ -161,6 +166,6 @@ const goSearch = () => {
 };
 
 onMounted(async () => {
-  await Promise.all([loadHome(), loadGenres(), loadBrowse()]);
+  await Promise.all([loadHome(), loadGenres()]);
 });
 </script>

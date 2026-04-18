@@ -146,11 +146,14 @@ const genres = ref<GenreItem[]>([]);
 const notifications = ref<NotificationItem[]>([]);
 const unreadCount = ref(0);
 const showNotificationPanel = ref(false);
+const hasLoadedNotificationList = ref(false);
+const lastNotificationListLoadedAt = ref(0);
 const openNavMenu = ref<"genre" | "ranking" | null>(null);
 const isMobileViewport = ref(false);
 const isMobileHeaderOpen = ref(true);
 
 const MOBILE_BREAKPOINT = 980;
+const NOTIFICATION_LIST_CACHE_MS = 60_000;
 
 const showHeaderControls = computed(() => !isMobileViewport.value || isMobileHeaderOpen.value);
 
@@ -220,24 +223,43 @@ const logout = () => {
 const toggleNotificationPanel = async () => {
   showNotificationPanel.value = !showNotificationPanel.value;
   if (showNotificationPanel.value) {
-    await loadNotifications();
+    await loadNotificationCount();
+    const shouldRefreshList =
+      !hasLoadedNotificationList.value ||
+      Date.now() - lastNotificationListLoadedAt.value > NOTIFICATION_LIST_CACHE_MS;
+    if (shouldRefreshList) {
+      await loadNotificationList();
+    }
   }
 };
 
-const loadNotifications = async () => {
+const loadNotificationCount = async () => {
   if (!auth.isAuthenticated) {
     notifications.value = [];
     unreadCount.value = 0;
+    hasLoadedNotificationList.value = false;
+    lastNotificationListLoadedAt.value = 0;
     return;
   }
 
-  const [{ data: countData }, { data: pageData }] = await Promise.all([
-    api.get<{ unreadCount: number }>("/api/user/notifications/unread-count"),
-    api.get<NotificationPage>("/api/user/notifications", { params: { page: 0, size: 8 } }),
-  ]);
-
+  const { data: countData } = await api.get<{ unreadCount: number }>("/api/user/notifications/unread-count");
   unreadCount.value = countData.unreadCount || 0;
+};
+
+const loadNotificationList = async () => {
+  if (!auth.isAuthenticated) {
+    notifications.value = [];
+    hasLoadedNotificationList.value = false;
+    lastNotificationListLoadedAt.value = 0;
+    return;
+  }
+
+  const { data: pageData } = await api.get<NotificationPage>("/api/user/notifications", {
+    params: { page: 0, size: 8 },
+  });
   notifications.value = pageData.content || [];
+  hasLoadedNotificationList.value = true;
+  lastNotificationListLoadedAt.value = Date.now();
 };
 
 const openNotification = async (notification: NotificationItem) => {
@@ -279,7 +301,7 @@ onMounted(async () => {
   window.addEventListener("resize", detectMobileViewport);
 
   if (auth.isAuthenticated) {
-    await loadNotifications();
+    await loadNotificationCount();
   }
 });
 

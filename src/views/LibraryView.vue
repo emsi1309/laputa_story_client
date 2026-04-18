@@ -119,18 +119,32 @@ const fallbackCover = "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+
 
 const resolveCover = (coverUrl: string | null) => resolvePublicImageUrl(coverUrl) || fallbackCover;
 
+const loadRecommendations = async () => {
+  const hasBehaviorData =
+    follows.value.length > 0 || favorites.value.length > 0 || history.value.length > 0;
+
+  if (!hasBehaviorData) {
+    recommendations.value = [];
+    return;
+  }
+
+  const recommendationRes = await api.get("/api/user/recommendations", { params: { limit: 16 } });
+  recommendations.value = recommendationRes.data || [];
+};
+
 const load = async () => {
-  const [followRes, favoriteRes, historyRes, recommendationRes] = await Promise.all([
+  const [followRes, favoriteRes, historyRes] = await Promise.all([
     api.get("/api/user/follows"),
     api.get("/api/user/favorites"),
     api.get("/api/user/history", { params: { limit: 40 } }),
-    api.get("/api/user/recommendations", { params: { limit: 16 } }),
   ]);
 
   follows.value = followRes.data || [];
   favorites.value = favoriteRes.data || [];
   history.value = historyRes.data || [];
-  recommendations.value = recommendationRes.data || [];
+
+  // Load recommendation after core sections so the page becomes usable faster.
+  await loadRecommendations();
 };
 
 const historyLink = (item: HistoryItem) => {

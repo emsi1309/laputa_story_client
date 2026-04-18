@@ -43,6 +43,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
+import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import PaginationControl from "../components/PaginationControl.vue";
@@ -75,8 +76,7 @@ const releaseYearValue = computed({
 });
 
 const loadGenres = async () => {
-  const { data } = await api.get("/api/public/genres");
-  genres.value = data || [];
+  genres.value = await fetchPublicGenres();
 };
 
 const loadResult = async () => {
@@ -143,7 +143,6 @@ watch(
 );
 
 onMounted(async () => {
-  await loadGenres();
-  await syncFromRoute();
+  await Promise.all([loadGenres(), syncFromRoute()]);
 });
 </script>
