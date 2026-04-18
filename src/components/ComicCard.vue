@@ -17,7 +17,6 @@
       >
         {{ comic.title }}
       </router-link>
-      <p class="comic-meta qq-card-meta">{{ comic.author || "Đang cập nhật" }}</p>
       <p class="comic-meta qq-card-meta">{{ comic.releaseYear || "N/A" }} · {{ comic.status }}</p>
       <router-link
         v-if="comic.latestChapter"
@@ -26,9 +25,6 @@
       >
         Chương {{ comic.latestChapter.number ?? comic.latestChapter.sortIndex }}
       </router-link>
-      <span class="qq-card-follow">
-        Lượt xem {{ formatCount(comic.viewCount) }} · Theo dõi {{ formatCount(comic.followCount) }} · Yêu thích {{ formatCount(comic.favoriteCount) }} · ★ {{ comic.ratingAverage.toFixed(1) }}
-      </span>
     </div>
   </article>
 </template>
@@ -43,8 +39,6 @@ const props = defineProps<{
 }>();
 
 const coverSource = computed(() => resolvePublicImageUrl(props.comic.coverUrl) || fallbackCover);
-
-const formatCount = (value: number) => new Intl.NumberFormat("vi-VN").format(value || 0);
 
 const timeAgo = computed(() => {
   const timestamp = props.comic.updatedAt;

@@ -538,9 +538,10 @@ a {
 
 .qq-row-track {
   display: flex;
-  gap: 14px;
+  gap: 10px;
   overflow-x: auto;
   scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
   -ms-overflow-style: none;
   padding: 4px 2px 4px;
@@ -553,7 +554,8 @@ a {
 }
 
 .qq-row-item {
-  flex: 0 0 clamp(178px, 18vw, 220px);
+  flex: 0 0 clamp(142px, 13.4vw, 168px);
+  scroll-snap-align: start;
 }
 
 .qq-row-nav {
@@ -836,12 +838,17 @@ a {
 
 .detail-layout {
   display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .detail-cover {
   width: 100%;
+  max-width: 232px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  justify-self: start;
   border-radius: 12px;
   border: 1px solid #273047;
 }
@@ -1801,6 +1808,10 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .qq-row-item {
+    flex-basis: clamp(146px, 38vw, 182px);
+  }
+
   .qq-row-nav {
     display: none;
   }
@@ -1846,6 +1857,10 @@ a {
   .qq-brand-logo {
     width: 150px;
     height: 64px;
+  }
+
+  .qq-row-item {
+    flex-basis: clamp(138px, 64vw, 176px);
   }
 
   .qq-mobile-header-toggle {

@@ -72,10 +72,16 @@ import ComicCardItem from "../components/ComicCard.vue";
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
 import PaginationControl from "../components/PaginationControl.vue";
 
+type HomePayload = {
+  latestUpdated?: ComicCard[];
+  hot?: ComicCard[];
+  exclusive?: ComicCard[];
+};
+
 const router = useRouter();
 
-const latest = ref<ComicCard[]>([]);
 const hot = ref<ComicCard[]>([]);
+const exclusive = ref<ComicCard[]>([]);
 const comics = ref<ComicCard[]>([]);
 const genres = ref<GenreItem[]>([]);
 const genreId = ref<number | null>(null);
@@ -99,13 +105,13 @@ const communityItems = [
   },
 ];
 
-const featuredComics = computed(() => hot.value.slice(0, 20));
-const exclusiveComics = computed(() => latest.value.slice(0, 20));
+const featuredComics = computed(() => hot.value.slice(0, 21));
+const exclusiveComics = computed(() => exclusive.value.slice(0, 21));
 
 const loadHome = async () => {
-  const { data } = await api.get("/api/public/home");
-  latest.value = data.latestUpdated || [];
+  const { data } = await api.get<HomePayload>("/api/public/home");
   hot.value = data.hot || [];
+  exclusive.value = data.exclusive || data.latestUpdated || [];
 };
 
 const loadGenres = async () => {
@@ -117,7 +123,7 @@ const loadBrowse = async () => {
   const { data } = await api.get("/api/public/comics", {
     params: {
       page: page.value,
-      size: 18,
+      size: 21,
       genreId: genreId.value ?? undefined,
     },
   });
