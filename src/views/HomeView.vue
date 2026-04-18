@@ -35,7 +35,7 @@
 
   <section class="container section-block">
     <div class="section-head">
-      <h2 class="section-title">Độc Quyền Truyện Chill</h2>
+      <h2 class="section-title">Truyện Chill</h2>
     </div>
     <HorizontalComicRow :comics="exclusiveComics" analytics-context="home_exclusive" />
   </section>
