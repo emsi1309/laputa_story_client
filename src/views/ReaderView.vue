@@ -75,7 +75,8 @@
         :data-page-index="page.pageIndex"
       >
         <img
-          :src="resolveImageSource(page)"
+          :data-src="resolveImageSource(page)"
+          :src="PLACEHOLDER_IMAGE"
           :alt="`Page ${page.pageIndex}`"
           loading="lazy"
           decoding="async"
@@ -253,6 +254,8 @@ const READER_CACHE_PREFIX = "reader_cache:v2:";
 const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
 const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
+const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+let imageObserver: IntersectionObserver | null = null;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
@@ -1273,6 +1276,7 @@ const loadReader = async () => {
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
   startChapterAnalyticsSession();
+  observeLazyImages();
 
   await loadChapterOptions(data.comic.slug);
   await loadChapterComments();
@@ -1334,6 +1338,66 @@ const handleReaderKeydown = (event: KeyboardEvent) => {
   }
 };
 
+const prefetchNeighbors = (pageIndex: number) => {
+  if (!readerData.value) return;
+  for (let offset = 1; offset <= 2; offset += 1) {
+    const idx = pageIndex + offset;
+    const page = readerData.value.pages.find((p) => p.pageIndex === idx);
+    if (page) {
+      const src = resolveImageSource(page);
+      if (src) {
+        const img = new Image();
+        img.src = src;
+      }
+    }
+  }
+};
+
+const observeLazyImages = () => {
+  if (imageObserver) {
+    imageObserver.disconnect();
+    imageObserver = null;
+  }
+  if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
+    const nodes = document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]");
+    nodes.forEach((img) => {
+      const ds = img.dataset.src;
+      if (ds) img.src = ds;
+    });
+    return;
+  }
+
+  imageObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting || entry.intersectionRatio > 0) {
+          const img = entry.target as HTMLImageElement;
+          const ds = img.dataset.src;
+          if (ds) {
+            img.src = ds;
+            const fig = img.closest("figure");
+            const pageIndex = fig ? Number(fig.dataset.pageIndex) : NaN;
+            if (!Number.isNaN(pageIndex)) {
+              prefetchNeighbors(pageIndex);
+            }
+            img.removeAttribute("data-src");
+          }
+          if (imageObserver) imageObserver.unobserve(img);
+        }
+      });
+    },
+    { root: null, rootMargin: "400px", threshold: 0.01 }
+  );
+
+  nextTick(() => {
+    const nodes = document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]");
+    nodes.forEach((img) => {
+      if (imageObserver) imageObserver.observe(img);
+    });
+  });
+};
+
+
 watch(
   () => [route.params.comicSlug, route.params.chapterSlug],
   async () => {
@@ -1349,6 +1413,7 @@ onMounted(async () => {
   setReaderHeaderVisibility(true, true);
   blockedImageHosts.value = readBlockedImageHosts();
   await loadReader();
+  observeLazyImages();
   lastScrollY.value = window.scrollY;
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
   window.addEventListener("keydown", handleReaderKeydown);
@@ -1361,6 +1426,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleReaderKeydown);
   if (syncTimer) {
     window.clearTimeout(syncTimer);
+  }
+  if (imageObserver) {
+    imageObserver.disconnect();
+    imageObserver = null;
   }
 });
 </script>
