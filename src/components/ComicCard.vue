@@ -18,7 +18,7 @@
       >
         {{ comic.title }}
       </router-link>
-      <p class="comic-meta qq-card-meta">{{ comic.releaseYear || "N/A" }} · {{ comic.status }}</p>
+      <p class="comic-meta qq-card-meta"> {{ comic.status }}</p>
       <router-link
         v-if="comic.latestChapter"
         :to="`/read/${comic.slug}/${comic.latestChapter.slug}`"
