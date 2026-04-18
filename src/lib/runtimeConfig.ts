@@ -12,3 +12,17 @@ export const getApiBaseUrl = () => {
 
   return "";
 };
+
+export const getMediaBaseUrl = () => {
+  const configured = import.meta.env.VITE_MEDIA_BASE_URL?.trim();
+  if (configured) {
+    return normalizeBase(configured);
+  }
+
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl) {
+    return "";
+  }
+
+  return `${normalizeBase(apiBaseUrl)}/api/public/storage`;
+};

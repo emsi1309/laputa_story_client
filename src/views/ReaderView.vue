@@ -198,7 +198,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
-import { getApiBaseUrl } from "../lib/runtimeConfig";
+import { getApiBaseUrl, getMediaBaseUrl } from "../lib/runtimeConfig";
 import { useAuthStore } from "../stores/auth";
 import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
 
@@ -226,6 +226,7 @@ const chapterReportDetails = ref("");
 const readerNotice = ref("");
 let syncTimer: number | null = null;
 const API_BASE_URL = getApiBaseUrl();
+const MEDIA_BASE_URL = getMediaBaseUrl();
 const READER_CACHE_PREFIX = "reader_cache:v2:";
 const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
 const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
@@ -626,8 +627,7 @@ const parseExternalImageHost = (rawUrl: string) => {
     }
 
     const host = parsed.hostname.toLowerCase();
-    const currentHost = window.location.hostname.toLowerCase();
-    if (!host || host === currentHost) {
+    if (!host || isTrustedImageHost(host)) {
       return null;
     }
 
@@ -639,6 +639,68 @@ const parseExternalImageHost = (rawUrl: string) => {
 
 const LEGACY_STORAGE_PATH_PREFIX = "/net-truyen/";
 const API_STORAGE_PATH_PREFIX = "/api/public/storage";
+const API_STORAGE_PATH_PREFIX_WITH_SLASH = `${API_STORAGE_PATH_PREFIX}/`;
+
+const normalizeHost = (host: string) => host.toLowerCase().replace(/^www\./, "");
+
+const isTrustedImageHost = (host: string) => {
+  const normalizedHost = normalizeHost(host);
+  const currentHost = normalizeHost(window.location.hostname);
+  if (
+    normalizedHost === currentHost
+    || normalizedHost.endsWith(`.${currentHost}`)
+    || currentHost.endsWith(`.${normalizedHost}`)
+  ) {
+    return true;
+  }
+
+  if (!MEDIA_BASE_URL) {
+    return false;
+  }
+
+  try {
+    const mediaHost = normalizeHost(new URL(MEDIA_BASE_URL).hostname);
+    return (
+      normalizedHost === mediaHost
+      || normalizedHost.endsWith(`.${mediaHost}`)
+      || mediaHost.endsWith(`.${normalizedHost}`)
+    );
+  } catch {
+    return false;
+  }
+};
+
+const mapStoragePathToMediaBase = (rawUrl: string) => {
+  if (!MEDIA_BASE_URL || !rawUrl) {
+    return rawUrl;
+  }
+
+  const normalizedRaw = rawUrl.trim();
+  if (!normalizedRaw) {
+    return normalizedRaw;
+  }
+
+  if (normalizedRaw.startsWith(API_STORAGE_PATH_PREFIX_WITH_SLASH)) {
+    return `${MEDIA_BASE_URL}/${normalizedRaw.substring(API_STORAGE_PATH_PREFIX_WITH_SLASH.length)}`;
+  }
+
+  try {
+    const parsed = new URL(normalizedRaw, window.location.origin);
+    const currentHost = window.location.hostname.toLowerCase();
+    if (parsed.hostname.toLowerCase() !== currentHost) {
+      return normalizedRaw;
+    }
+
+    if (!parsed.pathname.startsWith(API_STORAGE_PATH_PREFIX_WITH_SLASH)) {
+      return normalizedRaw;
+    }
+
+    const mappedPath = `${MEDIA_BASE_URL}/${parsed.pathname.substring(API_STORAGE_PATH_PREFIX_WITH_SLASH.length)}`;
+    return `${mappedPath}${parsed.search}${parsed.hash}`;
+  } catch {
+    return normalizedRaw;
+  }
+};
 
 const normalizeServerStoredImageUrl = (rawUrl: string) => {
   if (!rawUrl) {
@@ -651,28 +713,30 @@ const normalizeServerStoredImageUrl = (rawUrl: string) => {
   }
 
   if (normalizedRawUrl.startsWith(LEGACY_STORAGE_PATH_PREFIX)) {
-    return `${API_STORAGE_PATH_PREFIX}/${normalizedRawUrl.substring(LEGACY_STORAGE_PATH_PREFIX.length)}`;
+    return mapStoragePathToMediaBase(
+      `${API_STORAGE_PATH_PREFIX}/${normalizedRawUrl.substring(LEGACY_STORAGE_PATH_PREFIX.length)}`
+    );
   }
 
   try {
     const parsed = new URL(normalizedRawUrl, window.location.origin);
     const currentHost = window.location.hostname.toLowerCase();
     if (parsed.hostname.toLowerCase() !== currentHost) {
-      return normalizedRawUrl;
+      return mapStoragePathToMediaBase(normalizedRawUrl);
     }
 
     if (!parsed.pathname.startsWith(LEGACY_STORAGE_PATH_PREFIX)) {
-      return normalizedRawUrl;
+      return mapStoragePathToMediaBase(normalizedRawUrl);
     }
 
     const mappedPath = `${API_STORAGE_PATH_PREFIX}/${parsed.pathname.substring(LEGACY_STORAGE_PATH_PREFIX.length)}`;
     if (/^https?:\/\//i.test(normalizedRawUrl)) {
-      return `${parsed.protocol}//${parsed.host}${mappedPath}${parsed.search}${parsed.hash}`;
+      return mapStoragePathToMediaBase(`${parsed.protocol}//${parsed.host}${mappedPath}${parsed.search}${parsed.hash}`);
     }
 
-    return `${mappedPath}${parsed.search}${parsed.hash}`;
+    return mapStoragePathToMediaBase(`${mappedPath}${parsed.search}${parsed.hash}`);
   } catch {
-    return normalizedRawUrl;
+    return mapStoragePathToMediaBase(normalizedRawUrl);
   }
 };
 
@@ -689,6 +753,7 @@ const isLikelyStorageUrl = (rawUrl: string) => {
   if (
     normalizedRaw.startsWith(API_STORAGE_PATH_PREFIX)
     || normalizedRaw.startsWith(LEGACY_STORAGE_PATH_PREFIX)
+    || (MEDIA_BASE_URL && normalizedRaw.startsWith(`${MEDIA_BASE_URL}/`))
   ) {
     return true;
   }
@@ -697,6 +762,15 @@ const isLikelyStorageUrl = (rawUrl: string) => {
     const parsed = new URL(normalizedRaw, window.location.origin);
     const currentHost = window.location.hostname.toLowerCase();
     if (parsed.hostname.toLowerCase() !== currentHost) {
+      if (MEDIA_BASE_URL) {
+        try {
+          const mediaHost = new URL(MEDIA_BASE_URL).hostname.toLowerCase();
+          if (parsed.hostname.toLowerCase() === mediaHost) {
+            return true;
+          }
+        } catch {
+        }
+      }
       return false;
     }
 
