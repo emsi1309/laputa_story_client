@@ -18,6 +18,27 @@
             </option>
           </select>
         </div>
+
+        <div class="reader-server-wrap">
+          <span>Server ảnh:</span>
+          <button
+            type="button"
+            class="reader-server-btn"
+            :class="{ active: selectedImageServer === 1 }"
+            @click="setImageServer(1)"
+          >
+            Server 1
+          </button>
+          <button
+            type="button"
+            class="reader-server-btn"
+            :class="{ active: selectedImageServer === 2 }"
+            :disabled="!hasServer2Images"
+            @click="setImageServer(2)"
+          >
+            Server 2
+          </button>
+        </div>
       </div>
       <div class="reader-nav-btns">
         <router-link
@@ -209,6 +230,7 @@ const auth = useAuthStore();
 const readerData = ref<ReaderData | null>(null);
 const chapterOptions = ref<ChapterBrief[]>([]);
 const selectedChapterSlug = ref("");
+const selectedImageServer = ref<1 | 2>(1);
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, number>>({});
 const blockedImageHosts = ref<Set<string>>(new Set());
@@ -251,6 +273,10 @@ type ThreadedCommentItem = CommentItem & {
 };
 
 type ReaderPageItem = ReaderData["pages"][number];
+
+const hasServer2Images = computed(() =>
+  Boolean(readerData.value?.pages.some((page) => Boolean(page.sourceImageUrl?.trim())))
+);
 
 const toTimestamp = (value: string) => {
   const time = new Date(value).getTime();
@@ -740,61 +766,36 @@ const normalizeServerStoredImageUrl = (rawUrl: string) => {
   }
 };
 
-const isLikelyStorageUrl = (rawUrl: string) => {
-  if (!rawUrl) {
-    return false;
+const normalizeImageServer = (value: number | null | undefined): 1 | 2 => (value === 2 ? 2 : 1);
+
+const setImageServer = (server: 1 | 2) => {
+  if (server === 2 && !hasServer2Images.value) {
+    return;
   }
 
-  const normalizedRaw = rawUrl.trim();
-  if (!normalizedRaw) {
-    return false;
+  if (selectedImageServer.value === server) {
+    return;
   }
 
-  if (
-    normalizedRaw.startsWith(API_STORAGE_PATH_PREFIX)
-    || normalizedRaw.startsWith(LEGACY_STORAGE_PATH_PREFIX)
-    || (MEDIA_BASE_URL && normalizedRaw.startsWith(`${MEDIA_BASE_URL}/`))
-  ) {
-    return true;
-  }
-
-  try {
-    const parsed = new URL(normalizedRaw, window.location.origin);
-    const currentHost = window.location.hostname.toLowerCase();
-    if (parsed.hostname.toLowerCase() !== currentHost) {
-      if (MEDIA_BASE_URL) {
-        try {
-          const mediaHost = new URL(MEDIA_BASE_URL).hostname.toLowerCase();
-          if (parsed.hostname.toLowerCase() === mediaHost) {
-            return true;
-          }
-        } catch {
-        }
-      }
-      return false;
-    }
-
-    return (
-      parsed.pathname.startsWith(API_STORAGE_PATH_PREFIX)
-      || parsed.pathname.startsWith(LEGACY_STORAGE_PATH_PREFIX)
-    );
-  } catch {
-    return false;
-  }
+  selectedImageServer.value = server;
+  imageFallbackMap.value = {};
 };
 
 const resolveImageCandidates = (page: ReaderPageItem) => {
   const candidates: string[] = [];
 
-  const primary = normalizeServerStoredImageUrl(page.imageUrl);
-  if (primary) {
-    candidates.push(primary);
-  }
-
+  const server1Raw = normalizeServerStoredImageUrl(page.imageUrl);
   const sourceRaw = page.sourceImageUrl?.trim() || "";
-  const source = sourceRaw ? normalizeServerStoredImageUrl(sourceRaw) : "";
-  if (isLikelyStorageUrl(primary) && source && source !== primary) {
-    candidates.push(source);
+  const server2Raw = sourceRaw ? normalizeServerStoredImageUrl(sourceRaw) : "";
+
+  const ordered = selectedImageServer.value === 2
+    ? [server2Raw, server1Raw]
+    : [server1Raw, server2Raw];
+
+  for (const candidate of ordered) {
+    if (candidate && !candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
   }
 
   return candidates;
@@ -1264,6 +1265,10 @@ const loadReader = async () => {
     data = response.data;
     saveCachedReader(comicSlug, chapterSlug, data);
   }
+
+  const backendDefaultServer = normalizeImageServer(data.defaultImageServer);
+  const hasSecondarySource = data.pages.some((page) => Boolean(page.sourceImageUrl?.trim()));
+  selectedImageServer.value = backendDefaultServer === 2 && hasSecondarySource ? 2 : 1;
 
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;

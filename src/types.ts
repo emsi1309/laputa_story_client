@@ -84,6 +84,7 @@ export type ReaderData = {
     slug: string;
     number: number | null;
   } | null;
+  defaultImageServer: number;
 };
 
 export type CommentItem = {
