@@ -134,6 +134,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { fetchPublicGenres } from "../lib/publicData";
 import { useAuthStore } from "../stores/auth";
 import type { GenreItem, NotificationItem, NotificationPage } from "../types";
 
@@ -267,8 +268,7 @@ const markAllRead = async () => {
 };
 
 const loadGenres = async () => {
-  const { data } = await api.get("/api/public/genres");
-  genres.value = data || [];
+  genres.value = await fetchPublicGenres();
 };
 
 onMounted(loadGenres);

@@ -73,6 +73,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
+import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
@@ -121,8 +122,7 @@ const loadHome = async () => {
 };
 
 const loadGenres = async () => {
-  const { data } = await api.get("/api/public/genres");
-  genres.value = data || [];
+  genres.value = await fetchPublicGenres();
 };
 
 const loadBrowse = async () => {

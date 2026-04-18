@@ -5,7 +5,7 @@
 
       <div>
         <h1 class="detail-title">{{ detail.title }}</h1>
-        <p class="detail-meta">Tác giả: {{ detail.author || "Đang cập nhật" }} · {{ detail.status }} · {{ detail.releaseYear || "N/A" }}</p>
+        <p class="detail-meta">Tác giả: {{ detail.author || "Đang cập nhật" }} · {{ detail.status }}</p>
         <p class="detail-meta">Lượt xem: {{ formatCount(detail.viewCount) }}</p>
         <p class="detail-meta">Lượt theo dõi: {{ followCount }}</p>
         <p class="detail-meta">Lượt yêu thích: {{ formatCount(favoriteCount) }}</p>
