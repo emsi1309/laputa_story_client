@@ -10,6 +10,8 @@ import RegisterView from "./views/RegisterView.vue";
 import LibraryView from "./views/LibraryView.vue";
 import ProfileView from "./views/ProfileView.vue";
 import AboutView from "./views/AboutView.vue";
+import TranslationRequestView from "./views/TranslationRequestView.vue";
+import AdvertisingContactView from "./views/AdvertisingContactView.vue";
 import { trackPageView } from "./lib/analytics";
 import { updateDocumentSeo } from "./lib/seo";
 
@@ -73,6 +75,26 @@ const router = createRouter({
             seoTitle: "Giới thiệu Truyện Chill",
             seoDescription: "Giới thiệu về Truyện Chill - website đọc truyện miễn phí dành cho cộng đồng yêu truyện.",
             seoKeywords: "giới thiệu truyện chill, đọc truyện miễn phí",
+          },
+        },
+        {
+          path: "request-translation",
+          name: "request-translation",
+          component: TranslationRequestView,
+          meta: {
+            seoTitle: "Yêu cầu dịch truyện",
+            seoDescription: "Gửi đề xuất truyện cần dịch để đội ngũ Truyện Chill xem xét và phản hồi.",
+            seoKeywords: "yêu cầu dịch truyện, đề xuất truyện",
+          },
+        },
+        {
+          path: "advertising-contact",
+          name: "advertising-contact",
+          component: AdvertisingContactView,
+          meta: {
+            seoTitle: "Liên hệ quảng cáo",
+            seoDescription: "Liên hệ hợp tác quảng cáo và tài trợ với Truyện Chill.",
+            seoKeywords: "liên hệ quảng cáo, hợp tác truyền thông",
           },
         },
         {

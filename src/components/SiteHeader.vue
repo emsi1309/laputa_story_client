@@ -124,7 +124,8 @@
         <router-link to="/library">Theo dõi</router-link>
         <a href="https://discord.gg" target="_blank" rel="noreferrer">Discord</a>
         <a href="https://facebook.com" target="_blank" rel="noreferrer">Fanpage</a>
-        <a href="/search">Yêu cầu dịch truyện</a>
+        <router-link to="/request-translation">Yêu cầu dịch truyện</router-link>
+        <router-link to="/advertising-contact">Liên hệ quảng cáo</router-link>
       </div>
     </div>
   </header>
