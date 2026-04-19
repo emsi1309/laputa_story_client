@@ -256,11 +256,17 @@ const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
 const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 let imageObserver: IntersectionObserver | null = null;
+let fallbackLazyCleanup: (() => void) | null = null;
+let prefetchedImageSources = new Set<string>();
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
 const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
 const MAX_IMAGE_RETRY_ATTEMPTS = 2;
+const MOBILE_VIEWPORT_MAX_WIDTH = 768;
+const MOBILE_LAZY_ROOT_MARGIN = "180px";
+const DESKTOP_LAZY_ROOT_MARGIN = "400px";
+const DESKTOP_PREFETCH_NEIGHBOR_COUNT = 1;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -893,6 +899,32 @@ const shouldUseProxyByDefault = (rawUrl: string) => {
   return Boolean(host);
 };
 
+const shouldUseConservativeLazyStrategy = () => {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  const isMobileViewport = window.matchMedia(`(max-width: ${MOBILE_VIEWPORT_MAX_WIDTH}px)`).matches;
+  const navigatorWithHints = window.navigator as Navigator & {
+    connection?: {
+      saveData?: boolean;
+      effectiveType?: string;
+    };
+    deviceMemory?: number;
+  };
+  const saveDataEnabled = Boolean(navigatorWithHints.connection?.saveData);
+  const effectiveType = (navigatorWithHints.connection?.effectiveType || "").toLowerCase();
+  const isSlowNetwork = effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g";
+  const hasLowMemory = typeof navigatorWithHints.deviceMemory === "number"
+    && navigatorWithHints.deviceMemory > 0
+    && navigatorWithHints.deviceMemory <= 4;
+
+  return isMobileViewport || saveDataEnabled || isSlowNetwork || hasLowMemory;
+};
+
+const getLazyRootMargin = () =>
+  (shouldUseConservativeLazyStrategy() ? MOBILE_LAZY_ROOT_MARGIN : DESKTOP_LAZY_ROOT_MARGIN);
+
 const markImageAsBlocked = (page: ReaderPageItem, event?: Event) => {
   const imageElement = event?.target instanceof HTMLImageElement
     ? event.target
@@ -1309,6 +1341,7 @@ const loadReader = async () => {
   const hasSecondarySource = data.pages.some((page) => Boolean(page.sourceImageUrl?.trim()));
   selectedImageServer.value = backendDefaultServer === 2 && hasSecondarySource ? 2 : 1;
 
+  prefetchedImageSources = new Set<string>();
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
   startChapterAnalyticsSession();
@@ -1375,18 +1408,32 @@ const handleReaderKeydown = (event: KeyboardEvent) => {
 };
 
 const prefetchNeighbors = (pageIndex: number) => {
-  if (!readerData.value) return;
-  for (let offset = 1; offset <= 2; offset += 1) {
+  if (!readerData.value || shouldUseConservativeLazyStrategy()) {
+    return;
+  }
+
+  for (let offset = 1; offset <= DESKTOP_PREFETCH_NEIGHBOR_COUNT; offset += 1) {
     const idx = pageIndex + offset;
     const page = readerData.value.pages.find((p) => p.pageIndex === idx);
     if (page) {
       const src = resolveImageSource(page);
-      if (src) {
+      if (src && !prefetchedImageSources.has(src)) {
+        prefetchedImageSources.add(src);
         const img = new Image();
+        img.decoding = "async";
         img.src = src;
       }
     }
   }
+};
+
+const teardownFallbackLazyLoader = () => {
+  if (!fallbackLazyCleanup) {
+    return;
+  }
+
+  fallbackLazyCleanup();
+  fallbackLazyCleanup = null;
 };
 
 const observeLazyImages = () => {
@@ -1394,11 +1441,55 @@ const observeLazyImages = () => {
     imageObserver.disconnect();
     imageObserver = null;
   }
-  if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
-    const nodes = document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]");
-    nodes.forEach((img) => {
-      const ds = img.dataset.src;
-      if (ds) img.src = ds;
+
+  teardownFallbackLazyLoader();
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (typeof IntersectionObserver === "undefined") {
+    const nodes = Array.from(document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]"));
+    if (!nodes.length) {
+      return;
+    }
+
+    const fallbackMargin = Number.parseInt(getLazyRootMargin(), 10) || 180;
+
+    const loadNearbyFallbackImages = () => {
+      const viewportBottom = window.scrollY + window.innerHeight + fallbackMargin;
+      nodes.forEach((img) => {
+        const ds = img.dataset.src;
+        if (!ds) {
+          return;
+        }
+
+        const absoluteTop = img.getBoundingClientRect().top + window.scrollY;
+        if (absoluteTop <= viewportBottom) {
+          img.src = ds;
+          img.removeAttribute("data-src");
+        }
+      });
+
+      const hasPendingImage = nodes.some((img) => Boolean(img.dataset.src));
+      if (!hasPendingImage) {
+        teardownFallbackLazyLoader();
+      }
+    };
+
+    const onFallbackUpdate = () => {
+      loadNearbyFallbackImages();
+    };
+
+    window.addEventListener("scroll", onFallbackUpdate, { passive: true });
+    window.addEventListener("resize", onFallbackUpdate);
+    fallbackLazyCleanup = () => {
+      window.removeEventListener("scroll", onFallbackUpdate);
+      window.removeEventListener("resize", onFallbackUpdate);
+    };
+
+    nextTick(() => {
+      loadNearbyFallbackImages();
     });
     return;
   }
@@ -1422,7 +1513,7 @@ const observeLazyImages = () => {
         }
       });
     },
-    { root: null, rootMargin: "400px", threshold: 0.01 }
+    { root: null, rootMargin: getLazyRootMargin(), threshold: 0.01 }
   );
 
   nextTick(() => {
@@ -1449,7 +1540,6 @@ onMounted(async () => {
   setReaderHeaderVisibility(true, true);
   blockedImageHosts.value = readBlockedImageHosts();
   await loadReader();
-  observeLazyImages();
   lastScrollY.value = window.scrollY;
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
   window.addEventListener("keydown", handleReaderKeydown);
@@ -1460,6 +1550,7 @@ onBeforeUnmount(() => {
   setReaderHeaderVisibility(true, true);
   window.removeEventListener("scroll", updateCurrentPageByScroll);
   window.removeEventListener("keydown", handleReaderKeydown);
+  teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);
   }
