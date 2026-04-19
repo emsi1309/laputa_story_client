@@ -81,7 +81,7 @@
           loading="lazy"
           decoding="async"
           referrerpolicy="no-referrer"
-          @error="markImageAsBlocked(page)"
+          @error="markImageAsBlocked(page, $event)"
         />
       </figure>
     </div>
@@ -259,6 +259,8 @@ let imageObserver: IntersectionObserver | null = null;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
+const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
+const MAX_IMAGE_RETRY_ATTEMPTS = 2;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -819,23 +821,28 @@ const readBlockedImageHosts = () => {
   try {
     const raw = localStorage.getItem(BLOCKED_IMAGE_HOSTS_KEY);
     if (!raw) {
-      return new Set<string>();
+      return new Set<string>(DEFAULT_PROXY_IMAGE_HOSTS);
     }
 
     const parsed = JSON.parse(raw) as string[];
     if (!Array.isArray(parsed)) {
-      return new Set<string>();
+      return new Set<string>(DEFAULT_PROXY_IMAGE_HOSTS);
     }
 
-    return new Set(
+    const persistedHosts =
       parsed
         .filter((item) => typeof item === "string")
         .map((item) => item.trim().toLowerCase())
         .filter((item) => item.length > 0)
-        .slice(-MAX_BLOCKED_IMAGE_HOSTS)
-    );
+        .slice(-MAX_BLOCKED_IMAGE_HOSTS);
+
+    const merged = new Set<string>(persistedHosts);
+    for (const host of DEFAULT_PROXY_IMAGE_HOSTS) {
+      merged.add(host);
+    }
+    return merged;
   } catch {
-    return new Set<string>();
+    return new Set<string>(DEFAULT_PROXY_IMAGE_HOSTS);
   }
 };
 
@@ -858,6 +865,21 @@ const registerBlockedImageHost = (rawUrl: string) => {
   persistBlockedImageHosts(next);
 };
 
+const isBlockedImageHost = (host: string) => {
+  const normalizedHost = host.trim().toLowerCase();
+  if (!normalizedHost) {
+    return false;
+  }
+
+  for (const blockedHost of blockedImageHosts.value) {
+    if (normalizedHost === blockedHost || normalizedHost.endsWith(`.${blockedHost}`)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const resolveImageSource = (page: ReaderData["pages"][number]) => {
   const rawSource = resolveCurrentRawImageSource(page);
   if (shouldUseProxyByDefault(rawSource)) {
@@ -868,31 +890,45 @@ const resolveImageSource = (page: ReaderData["pages"][number]) => {
 
 const shouldUseProxyByDefault = (rawUrl: string) => {
   const host = parseExternalImageHost(rawUrl);
-  if (!host) {
-    return false;
-  }
-
-  return blockedImageHosts.value.has(host);
+  return Boolean(host);
 };
 
-const markImageAsBlocked = (page: ReaderPageItem) => {
+const markImageAsBlocked = (page: ReaderPageItem, event?: Event) => {
+  const imageElement = event?.target instanceof HTMLImageElement
+    ? event.target
+    : null;
+  const retryAttempts = imageElement
+    ? Number(imageElement.dataset.readerRetryAttempts || "0")
+    : 0;
+
+  if (imageElement && retryAttempts >= MAX_IMAGE_RETRY_ATTEMPTS) {
+    return;
+  }
+
   const currentRawSource = resolveCurrentRawImageSource(page);
   const externalHost = parseExternalImageHost(currentRawSource);
-  if (externalHost && !blockedImageHosts.value.has(externalHost)) {
+  if (externalHost && !isBlockedImageHost(externalHost)) {
     registerBlockedImageHost(currentRawSource);
-    return;
   }
 
   const candidates = resolveImageCandidates(page);
   const currentIndex = imageFallbackMap.value[page.id] ?? 0;
-  if (currentIndex >= candidates.length - 1) {
+  if (currentIndex < candidates.length - 1) {
+    imageFallbackMap.value = {
+      ...imageFallbackMap.value,
+      [page.id]: currentIndex + 1,
+    };
+  }
+
+  if (!imageElement) {
     return;
   }
 
-  imageFallbackMap.value = {
-    ...imageFallbackMap.value,
-    [page.id]: currentIndex + 1,
-  };
+  imageElement.dataset.readerRetryAttempts = String(retryAttempts + 1);
+  const nextSource = resolveImageSource(page);
+  if (nextSource) {
+    imageElement.src = nextSource;
+  }
 };
 
 const formatChapterLabel = (chapter: ChapterBrief) => {
