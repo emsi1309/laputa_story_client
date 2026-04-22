@@ -5,8 +5,6 @@ Disallow: /login
 Disallow: /register
 Disallow: /profile
 Disallow: /library
-Disallow: /read/
-Disallow: /search
 
 Host: truyenchill.online
 Sitemap: https://truyenchill.online/api/public/seo/sitemap.xml
