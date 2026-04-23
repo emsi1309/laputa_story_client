@@ -1293,15 +1293,16 @@ a {
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  border: 1px solid #334155;
-  background: rgba(17, 24, 39, 0.86);
-  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(17, 24, 39, 0.48);
+  color: rgba(248, 250, 252, 0.9);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  backdrop-filter: blur(6px);
-  transition: transform 0.16s ease, border-color 0.16s ease;
+  opacity: 0.64;
+  backdrop-filter: blur(4px);
+  transition: transform 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
 }
 
 .reader-scroll-btn span {
@@ -1311,7 +1312,8 @@ a {
 
 .reader-scroll-btn:hover {
   transform: translateY(-1px);
-  border-color: #60a5fa;
+  border-color: #93c5fd;
+  opacity: 0.9;
 }
 
 .auth-screen {

@@ -299,10 +299,6 @@ const ensureLifecycleHooks = () => {
   window.addEventListener("pagehide", () => {
     flushWithBeacon();
   });
-
-  window.addEventListener("beforeunload", () => {
-    flushWithBeacon();
-  });
 };
 
 export const flushAnalytics = async () => {

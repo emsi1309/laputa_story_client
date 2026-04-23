@@ -252,6 +252,11 @@ router.afterEach((to, from) => {
   const externalReferrer =
     !from?.name && typeof document !== "undefined" ? document.referrer || undefined : undefined;
 
+  // Reader is memory-sensitive on mobile; skip pageview analytics here.
+  if (to.name === "reader") {
+    return;
+  }
+
   trackPageView({
     pagePath: to.fullPath,
     referrer: internalReferrer || externalReferrer,

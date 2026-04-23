@@ -254,6 +254,8 @@ const READER_CACHE_PREFIX = "reader_cache:v2:";
 const VIEWED_CHAPTER_PREFIX = "viewed_chapter:";
 const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
+const READER_PROGRESS_FRESH_MS = 6 * 60 * 60 * 1000;
+const READER_ANALYTICS_ENABLED = false;
 const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 let imageObserver: IntersectionObserver | null = null;
 let fallbackLazyCleanup: (() => void) | null = null;
@@ -267,6 +269,9 @@ const MOBILE_VIEWPORT_MAX_WIDTH = 768;
 const MOBILE_LAZY_ROOT_MARGIN = "180px";
 const DESKTOP_LAZY_ROOT_MARGIN = "400px";
 const DESKTOP_PREFETCH_NEIGHBOR_COUNT = 1;
+const BACKGROUND_IMAGE_KEEP_RADIUS = 1;
+const MOBILE_MEMORY_TRIM_RADIUS = 3;
+const MOBILE_MEMORY_TRIM_INTERVAL_MS = 450;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -278,6 +283,7 @@ const headerAutoPauseUntil = ref(0);
 const chapterStartedAtMs = ref(0);
 const chapterCompletedTracked = ref(false);
 const chapterExitTracked = ref(false);
+let lastMobileMemoryTrimAt = 0;
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -345,6 +351,10 @@ const startChapterAnalyticsSession = () => {
   chapterCompletedTracked.value = false;
   chapterExitTracked.value = false;
 
+  if (!READER_ANALYTICS_ENABLED) {
+    return;
+  }
+
   trackAnalyticsEvent("CHAPTER_OPEN", {
     pagePath: currentReaderPath(),
     context: "reader_open",
@@ -361,6 +371,10 @@ const trackChapterCompletion = () => {
 
   chapterCompletedTracked.value = true;
   chapterExitTracked.value = true;
+
+  if (!READER_ANALYTICS_ENABLED) {
+    return;
+  }
 
   trackAnalyticsEvent("CHAPTER_COMPLETE", {
     pagePath: currentReaderPath(),
@@ -379,6 +393,10 @@ const trackChapterExitIfNeeded = () => {
   }
 
   chapterExitTracked.value = true;
+  if (!READER_ANALYTICS_ENABLED) {
+    return;
+  }
+
   const progress = currentReaderProgressPercent();
   if (progress >= 98) {
     return;
@@ -477,7 +495,64 @@ const storageKey = computed(
   () => `reader:${String(route.params.comicSlug)}:${String(route.params.chapterSlug)}`
 );
 
-const shouldRestoreSavedPage = computed(() => route.query.resume === "1");
+const shouldForceRestoreSavedPage = computed(() => {
+  const resume = route.query.resume;
+  if (Array.isArray(resume)) {
+    return resume.includes("1");
+  }
+  return resume === "1";
+});
+
+type ReaderProgressSnapshot = {
+  pageIndex: number;
+  savedAt: number;
+};
+
+const readSavedProgress = (): ReaderProgressSnapshot | null => {
+  const raw = localStorage.getItem(storageKey.value);
+  if (!raw) {
+    return null;
+  }
+
+  const legacyPageIndex = Number(raw);
+  if (Number.isFinite(legacyPageIndex) && legacyPageIndex > 0) {
+    const migrated: ReaderProgressSnapshot = {
+      pageIndex: Math.floor(legacyPageIndex),
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(storageKey.value, JSON.stringify(migrated));
+    return migrated;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { pageIndex?: number; savedAt?: number };
+    const pageIndex = Number(parsed.pageIndex);
+    const savedAt = Number(parsed.savedAt);
+    if (!Number.isFinite(pageIndex) || pageIndex < 1) {
+      localStorage.removeItem(storageKey.value);
+      return null;
+    }
+
+    return {
+      pageIndex: Math.floor(pageIndex),
+      savedAt: Number.isFinite(savedAt) && savedAt > 0 ? Math.floor(savedAt) : 0,
+    };
+  } catch {
+    localStorage.removeItem(storageKey.value);
+    return null;
+  }
+};
+
+const writeSavedProgress = (pageIndex: number) => {
+  const normalizedPage = Math.max(1, Math.floor(pageIndex));
+  localStorage.setItem(
+    storageKey.value,
+    JSON.stringify({
+      pageIndex: normalizedPage,
+      savedAt: Date.now(),
+    })
+  );
+};
 
 const getReaderCacheKey = (comicSlug: string, chapterSlug: string) =>
   `${READER_CACHE_PREFIX}${comicSlug}:${chapterSlug}`;
@@ -630,7 +705,7 @@ const loadChapterOptions = async (comicSlug: string) => {
 };
 
 const saveProgress = (pageIndex: number) => {
-  localStorage.setItem(storageKey.value, String(pageIndex));
+  writeSavedProgress(pageIndex);
 
   if (!auth.isAuthenticated || !readerData.value) {
     return;
@@ -1298,15 +1373,26 @@ const updateCurrentPageByScroll = () => {
       trackChapterCompletion();
     }
   }
+
+  trimFarImagesForMobileMemory();
 };
 
 const restoreSavedPage = async () => {
-  const saved = Number(localStorage.getItem(storageKey.value) || "1");
-  const normalizedSaved = saved > 0 ? saved : 1;
+  const savedProgress = readSavedProgress();
+  const normalizedSaved = savedProgress?.pageIndex && savedProgress.pageIndex > 0
+    ? savedProgress.pageIndex
+    : 1;
+  const isFreshSavedProgress = Boolean(
+    savedProgress?.savedAt && Date.now() - savedProgress.savedAt <= READER_PROGRESS_FRESH_MS
+  );
+  const shouldResumeByProgress = normalizedSaved > 1 && isFreshSavedProgress;
+  const shouldResume = shouldForceRestoreSavedPage.value || shouldResumeByProgress;
 
-  if (!shouldRestoreSavedPage.value || normalizedSaved <= 1) {
+  if (!shouldResume || normalizedSaved <= 1) {
     currentPage.value = 1;
-    saveProgress(1);
+    if (!savedProgress) {
+      saveProgress(1);
+    }
     return;
   }
 
@@ -1319,6 +1405,121 @@ const restoreSavedPage = async () => {
   }
 
   saveProgress(currentPage.value);
+};
+
+const releaseOffscreenImagesOnBackground = () => {
+  const keepFrom = Math.max(1, currentPage.value - BACKGROUND_IMAGE_KEEP_RADIUS);
+  const keepTo = currentPage.value + BACKGROUND_IMAGE_KEEP_RADIUS;
+  const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
+
+  images.forEach((img) => {
+    const figure = img.closest<HTMLElement>(".reader-page");
+    const pageIndex = Number(figure?.dataset.pageIndex || "0");
+
+    if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
+      return;
+    }
+
+    const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
+    if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
+      return;
+    }
+
+    if (!img.dataset.src) {
+      img.dataset.src = currentSrc;
+    }
+    img.src = PLACEHOLDER_IMAGE;
+    if (imageObserver) {
+      imageObserver.observe(img);
+    }
+  });
+};
+
+const trimFarImagesForMobileMemory = () => {
+  if (!shouldUseConservativeLazyStrategy()) {
+    return;
+  }
+
+  const now = performance.now();
+  if (now - lastMobileMemoryTrimAt < MOBILE_MEMORY_TRIM_INTERVAL_MS) {
+    return;
+  }
+  lastMobileMemoryTrimAt = now;
+
+  const keepFrom = Math.max(1, currentPage.value - MOBILE_MEMORY_TRIM_RADIUS);
+  const keepTo = currentPage.value + MOBILE_MEMORY_TRIM_RADIUS;
+  const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
+  let releasedAny = false;
+
+  images.forEach((img) => {
+    const figure = img.closest<HTMLElement>(".reader-page");
+    const pageIndex = Number(figure?.dataset.pageIndex || "0");
+    if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
+      return;
+    }
+
+    const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
+    if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
+      return;
+    }
+
+    if (!img.dataset.src) {
+      img.dataset.src = currentSrc;
+    }
+    img.src = PLACEHOLDER_IMAGE;
+    if (imageObserver) {
+      imageObserver.observe(img);
+    }
+    releasedAny = true;
+  });
+
+  if (releasedAny && typeof IntersectionObserver === "undefined") {
+    observeLazyImages();
+  }
+};
+
+const restoreNearCurrentImages = () => {
+  const start = Math.max(1, currentPage.value - 1);
+  const end = currentPage.value + 1;
+
+  for (let idx = start; idx <= end; idx += 1) {
+    const img = document.querySelector<HTMLImageElement>(
+      `.reader-page[data-page-index='${idx}'] img[data-src]`
+    );
+    const ds = img?.dataset.src;
+    if (!img || !ds) {
+      continue;
+    }
+
+    img.src = ds;
+    img.removeAttribute("data-src");
+  }
+};
+
+const handleReaderVisibilityChange = () => {
+  if (document.visibilityState === "hidden") {
+    writeSavedProgress(currentPage.value);
+    releaseOffscreenImagesOnBackground();
+    teardownFallbackLazyLoader();
+    if (imageObserver) {
+      imageObserver.disconnect();
+      imageObserver = null;
+    }
+    return;
+  }
+
+  observeLazyImages();
+  restoreNearCurrentImages();
+};
+
+const handleReaderPageHide = () => {
+  writeSavedProgress(currentPage.value);
+  releaseOffscreenImagesOnBackground();
+};
+
+const handleReaderPageShow = () => {
+  observeLazyImages();
+  restoreNearCurrentImages();
 };
 
 const loadReader = async () => {
@@ -1543,6 +1744,9 @@ onMounted(async () => {
   lastScrollY.value = window.scrollY;
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
   window.addEventListener("keydown", handleReaderKeydown);
+  document.addEventListener("visibilitychange", handleReaderVisibilityChange);
+  window.addEventListener("pagehide", handleReaderPageHide);
+  window.addEventListener("pageshow", handleReaderPageShow);
 });
 
 onBeforeUnmount(() => {
@@ -1550,6 +1754,9 @@ onBeforeUnmount(() => {
   setReaderHeaderVisibility(true, true);
   window.removeEventListener("scroll", updateCurrentPageByScroll);
   window.removeEventListener("keydown", handleReaderKeydown);
+  document.removeEventListener("visibilitychange", handleReaderVisibilityChange);
+  window.removeEventListener("pagehide", handleReaderPageHide);
+  window.removeEventListener("pageshow", handleReaderPageShow);
   teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);
