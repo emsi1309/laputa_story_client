@@ -1258,9 +1258,13 @@ a {
 .reader-pages {
   display: block;
   line-height: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .reader-page {
+  width: 100%;
+  max-width: 100%;
   margin: 0;
   background: transparent;
   border: none;
@@ -1272,6 +1276,36 @@ a {
 .reader-page img {
   width: 100%;
   display: block;
+  height: auto;
+  max-width: 100%;
+  min-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .reader-wrap {
+    width: 100%;
+    max-width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .reader-pages,
+  .reader-page {
+    min-width: 100vw;
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(50% - 50vw);
+  }
+
+  .reader-page img {
+    width: 100%;
+    max-width: none;
+    min-width: 100%;
+    min-height: 260px;
+    height: auto;
+    object-fit: contain;
+    background: #0f172a;
+  }
 }
 
 .reader-foot-nav {

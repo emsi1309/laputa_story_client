@@ -78,9 +78,11 @@
           :data-src="resolveImageSource(page)"
           :src="PLACEHOLDER_IMAGE"
           :alt="`Page ${page.pageIndex}`"
+          :style="getPageImageStyle(page)"
           loading="lazy"
           decoding="async"
           referrerpolicy="no-referrer"
+          @load="handlePageImageLoad(page, $event)"
           @error="markImageAsBlocked(page, $event)"
         />
       </figure>
@@ -234,6 +236,7 @@ const selectedChapterSlug = ref("");
 const selectedImageServer = ref<1 | 2>(1);
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, number>>({});
+const pageImageDimensions = ref<Record<number, { width: number; height: number }>>({});
 const blockedImageHosts = ref<Set<string>>(new Set());
 const swipeStartX = ref<number | null>(null);
 const swipeStartY = ref<number | null>(null);
@@ -269,9 +272,9 @@ const MOBILE_VIEWPORT_MAX_WIDTH = 768;
 const MOBILE_LAZY_ROOT_MARGIN = "180px";
 const DESKTOP_LAZY_ROOT_MARGIN = "400px";
 const DESKTOP_PREFETCH_NEIGHBOR_COUNT = 1;
-const BACKGROUND_IMAGE_KEEP_RADIUS = 1;
-const MOBILE_MEMORY_TRIM_RADIUS = 3;
-const MOBILE_MEMORY_TRIM_INTERVAL_MS = 450;
+const BACKGROUND_IMAGE_KEEP_RADIUS = 2; // Tăng từ 1 lên 2 để giữ nhiều ảnh hơn
+const MOBILE_MEMORY_TRIM_RADIUS = 5; // Tăng từ 3 lên 5 cho mobile
+const MOBILE_MEMORY_TRIM_INTERVAL_MS = 1000; // Tăng từ 450ms lên 1s để giảm tần suất
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -284,6 +287,7 @@ const chapterStartedAtMs = ref(0);
 const chapterCompletedTracked = ref(false);
 const chapterExitTracked = ref(false);
 let lastMobileMemoryTrimAt = 0;
+let mobileMemoryTrimDebounceTimer: number | null = null;
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -321,6 +325,45 @@ const currentReaderPath = () => {
   }
 
   return `/read/${readerData.value.comic.slug}/${readerData.value.chapter.slug}`;
+};
+
+const handlePageImageLoad = (page: ReaderPageItem, event: Event) => {
+  const imageElement = event.target instanceof HTMLImageElement ? event.target : null;
+  if (!imageElement) {
+    return;
+  }
+
+  const width = imageElement.naturalWidth;
+  const height = imageElement.naturalHeight;
+  if (!width || !height) {
+    return;
+  }
+
+  const existing = pageImageDimensions.value[page.id];
+  if (existing && existing.width === width && existing.height === height) {
+    return;
+  }
+
+  const nextDimensions = {
+    ...pageImageDimensions.value,
+    [page.id]: { width, height },
+  };
+  pageImageDimensions.value = nextDimensions;
+  writeStoredPageImageDimensions(nextDimensions);
+};
+
+const getPageImageStyle = (page: ReaderPageItem) => {
+  const dimensions = pageImageDimensions.value[page.id];
+  if (!dimensions) {
+    return {};
+  }
+
+  return {
+    width: "100%",
+    height: "auto",
+    aspectRatio: `${dimensions.width}/${dimensions.height}`,
+    minHeight: "auto",
+  } as const;
 };
 
 const currentReaderProgressPercent = () => {
@@ -495,6 +538,10 @@ const storageKey = computed(
   () => `reader:${String(route.params.comicSlug)}:${String(route.params.chapterSlug)}`
 );
 
+const pageImageDimensionsStorageKey = computed(
+  () => `${storageKey.value}:image-dimensions`
+);
+
 const shouldForceRestoreSavedPage = computed(() => {
   const resume = route.query.resume;
   if (Array.isArray(resume)) {
@@ -552,6 +599,45 @@ const writeSavedProgress = (pageIndex: number) => {
       savedAt: Date.now(),
     })
   );
+};
+
+const readStoredPageImageDimensions = (): Record<number, { width: number; height: number }> => {
+  const raw = localStorage.getItem(pageImageDimensionsStorageKey.value);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, { width?: number; height?: number }>;
+    return Object.entries(parsed).reduce<Record<number, { width: number; height: number }>>(
+      (acc, [key, value]) => {
+        const pageId = Number(key);
+        const width = Number(value?.width);
+        const height = Number(value?.height);
+        if (!Number.isFinite(pageId) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+          return acc;
+        }
+        acc[pageId] = { width: Math.floor(width), height: Math.floor(height) };
+        return acc;
+      },
+      {}
+    );
+  } catch {
+    localStorage.removeItem(pageImageDimensionsStorageKey.value);
+    return {};
+  }
+};
+
+const writeStoredPageImageDimensions = (dimensions: Record<number, { width: number; height: number }>) => {
+  try {
+    localStorage.setItem(pageImageDimensionsStorageKey.value, JSON.stringify(dimensions));
+  } catch {
+    // Ignore storage failures
+  }
+};
+
+const loadStoredPageImageDimensions = () => {
+  pageImageDimensions.value = readStoredPageImageDimensions();
 };
 
 const getReaderCacheKey = (comicSlug: string, chapterSlug: string) =>
@@ -1440,42 +1526,46 @@ const trimFarImagesForMobileMemory = () => {
     return;
   }
 
-  const now = performance.now();
-  if (now - lastMobileMemoryTrimAt < MOBILE_MEMORY_TRIM_INTERVAL_MS) {
-    return;
+  // Clear existing timer
+  if (mobileMemoryTrimDebounceTimer) {
+    window.clearTimeout(mobileMemoryTrimDebounceTimer);
   }
-  lastMobileMemoryTrimAt = now;
 
-  const keepFrom = Math.max(1, currentPage.value - MOBILE_MEMORY_TRIM_RADIUS);
-  const keepTo = currentPage.value + MOBILE_MEMORY_TRIM_RADIUS;
-  const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
-  let releasedAny = false;
+  // Debounce: chỉ trim sau khi scroll dừng 800ms
+  mobileMemoryTrimDebounceTimer = window.setTimeout(() => {
+    const keepFrom = Math.max(1, currentPage.value - MOBILE_MEMORY_TRIM_RADIUS);
+    const keepTo = currentPage.value + MOBILE_MEMORY_TRIM_RADIUS;
+    const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
+    let releasedAny = false;
 
-  images.forEach((img) => {
-    const figure = img.closest<HTMLElement>(".reader-page");
-    const pageIndex = Number(figure?.dataset.pageIndex || "0");
-    if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
-      return;
+    images.forEach((img) => {
+      const figure = img.closest<HTMLElement>(".reader-page");
+      const pageIndex = Number(figure?.dataset.pageIndex || "0");
+      if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
+        return;
+      }
+
+      const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
+      if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
+        return;
+      }
+
+      if (!img.dataset.src) {
+        img.dataset.src = currentSrc;
+      }
+      img.src = PLACEHOLDER_IMAGE;
+      if (imageObserver) {
+        imageObserver.observe(img);
+      }
+      releasedAny = true;
+    });
+
+    if (releasedAny && typeof IntersectionObserver === "undefined") {
+      observeLazyImages();
     }
 
-    const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
-    if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
-      return;
-    }
-
-    if (!img.dataset.src) {
-      img.dataset.src = currentSrc;
-    }
-    img.src = PLACEHOLDER_IMAGE;
-    if (imageObserver) {
-      imageObserver.observe(img);
-    }
-    releasedAny = true;
-  });
-
-  if (releasedAny && typeof IntersectionObserver === "undefined") {
-    observeLazyImages();
-  }
+    mobileMemoryTrimDebounceTimer = null;
+  }, 800); // Debounce 800ms
 };
 
 const restoreNearCurrentImages = () => {
@@ -1545,6 +1635,8 @@ const loadReader = async () => {
   prefetchedImageSources = new Set<string>();
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
+  loadStoredPageImageDimensions();
+  await nextTick();
   startChapterAnalyticsSession();
   observeLazyImages();
 
@@ -1553,6 +1645,7 @@ const loadReader = async () => {
 
   imageFallbackMap.value = {};
   await restoreSavedPage();
+  restoreNearCurrentImages();
   lastScrollY.value = window.scrollY;
   setReaderHeaderVisibility(true, true);
 };
@@ -1760,6 +1853,9 @@ onBeforeUnmount(() => {
   teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);
+  }
+  if (mobileMemoryTrimDebounceTimer) {
+    window.clearTimeout(mobileMemoryTrimDebounceTimer);
   }
   if (imageObserver) {
     imageObserver.disconnect();
