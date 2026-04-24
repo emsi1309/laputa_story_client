@@ -288,6 +288,7 @@ const chapterCompletedTracked = ref(false);
 const chapterExitTracked = ref(false);
 let lastMobileMemoryTrimAt = 0;
 let mobileMemoryTrimDebounceTimer: number | null = null;
+let offsetSaveDebounceTimer: number | null = null;
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -553,6 +554,8 @@ const shouldForceRestoreSavedPage = computed(() => {
 type ReaderProgressSnapshot = {
   pageIndex: number;
   savedAt: number;
+  // optional offset as percentage (0..1) from top of the page element
+  offsetPercent?: number;
 };
 
 const readSavedProgress = (): ReaderProgressSnapshot | null => {
@@ -572,9 +575,10 @@ const readSavedProgress = (): ReaderProgressSnapshot | null => {
   }
 
   try {
-    const parsed = JSON.parse(raw) as { pageIndex?: number; savedAt?: number };
+    const parsed = JSON.parse(raw) as { pageIndex?: number; savedAt?: number; offsetPercent?: number };
     const pageIndex = Number(parsed.pageIndex);
     const savedAt = Number(parsed.savedAt);
+    const offsetPercent = Number(parsed.offsetPercent);
     if (!Number.isFinite(pageIndex) || pageIndex < 1) {
       localStorage.removeItem(storageKey.value);
       return null;
@@ -583,6 +587,9 @@ const readSavedProgress = (): ReaderProgressSnapshot | null => {
     return {
       pageIndex: Math.floor(pageIndex),
       savedAt: Number.isFinite(savedAt) && savedAt > 0 ? Math.floor(savedAt) : 0,
+      offsetPercent: Number.isFinite(offsetPercent) && offsetPercent >= 0 && offsetPercent <= 1
+        ? offsetPercent
+        : undefined,
     };
   } catch {
     localStorage.removeItem(storageKey.value);
@@ -590,15 +597,20 @@ const readSavedProgress = (): ReaderProgressSnapshot | null => {
   }
 };
 
-const writeSavedProgress = (pageIndex: number) => {
+const writeSavedProgress = (pageIndex: number, offsetPercent?: number) => {
   const normalizedPage = Math.max(1, Math.floor(pageIndex));
-  localStorage.setItem(
-    storageKey.value,
-    JSON.stringify({
+  try {
+    const payload: { pageIndex: number; savedAt: number; offsetPercent?: number } = {
       pageIndex: normalizedPage,
       savedAt: Date.now(),
-    })
-  );
+    };
+    if (typeof offsetPercent === "number" && Number.isFinite(offsetPercent)) {
+      payload.offsetPercent = Math.max(0, Math.min(1, offsetPercent));
+    }
+    localStorage.setItem(storageKey.value, JSON.stringify(payload));
+  } catch {
+    // ignore storage failures
+  }
 };
 
 const readStoredPageImageDimensions = (): Record<number, { width: number; height: number }> => {
@@ -791,7 +803,30 @@ const loadChapterOptions = async (comicSlug: string) => {
 };
 
 const saveProgress = (pageIndex: number) => {
-  writeSavedProgress(pageIndex);
+  // Try to include an offsetPercent when saving progress so restores land
+  // inside very tall images instead of at the top. Only include offset if
+  // the target element has a sensible height to avoid saving 0 while images
+  // are still placeholders.
+  try {
+    const target = document.querySelector<HTMLElement>(`.reader-page[data-page-index='${pageIndex}']`);
+    if (target) {
+      const pageTop = target.offsetTop;
+      const pageHeight = Math.max(1, target.getBoundingClientRect().height || target.offsetHeight || 1);
+      const offset = Math.max(0, window.scrollY - pageTop);
+      const offsetPercent = Math.max(0, Math.min(1, offset / pageHeight));
+      // Only persist offsetPercent when the page appears to have reasonable
+      // height (avoid saving 0 while the real image hasn't rendered yet).
+      if (pageHeight >= 120) {
+        writeSavedProgress(pageIndex, offsetPercent);
+      } else {
+        writeSavedProgress(pageIndex);
+      }
+    } else {
+      writeSavedProgress(pageIndex);
+    }
+  } catch {
+    writeSavedProgress(pageIndex);
+  }
 
   if (!auth.isAuthenticated || !readerData.value) {
     return;
@@ -1461,6 +1496,67 @@ const updateCurrentPageByScroll = () => {
   }
 
   trimFarImagesForMobileMemory();
+
+  // Debounced save of offset for intra-page scroll (user scrolls within the
+  // same very tall image). This ensures we persist offsetPercent even when
+  // pageIndex does not change. We won't overwrite an existing offset with a
+  // useless 0 if the element hasn't rendered yet.
+  if (offsetSaveDebounceTimer) {
+    window.clearTimeout(offsetSaveDebounceTimer);
+  }
+  offsetSaveDebounceTimer = window.setTimeout(() => {
+    try {
+      const snap = getActivePageSnapshotFromDOM();
+      const target = document.querySelector<HTMLElement>(`.reader-page[data-page-index='${snap.pageIndex}']`);
+      if (!target) return;
+      const pageHeight = Math.max(1, target.getBoundingClientRect().height || target.offsetHeight || 1);
+      // Only persist offset when element has reasonable height to avoid
+      // saving 0 while image placeholders are still present.
+      if (pageHeight >= 120 && typeof snap.offsetPercent === 'number' && Number.isFinite(snap.offsetPercent)) {
+        writeSavedProgress(snap.pageIndex, snap.offsetPercent);
+      }
+    } catch {
+      // ignore
+    }
+    offsetSaveDebounceTimer = null;
+  }, 420);
+};
+
+// Compute active page index and offset percent from DOM (used when we need a
+// synchronous snapshot of which page is visible and where inside that page
+// the user is, e.g. during unload/visibilitychange).
+const getActivePageSnapshotFromDOM = () => {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(".reader-page"));
+  if (!nodes.length) return { pageIndex: 1, offsetPercent: 0 };
+
+  const marker = window.scrollY + 220;
+  let active = 1;
+  let activeNode: HTMLElement | null = null;
+  for (const node of nodes) {
+    if (node.offsetTop <= marker) {
+      active = Number(node.dataset.pageIndex || 1);
+      activeNode = node;
+    }
+  }
+
+  let offsetPercent = 0;
+  if (activeNode) {
+    const pageTop = activeNode.offsetTop;
+    const pageHeight = Math.max(1, activeNode.getBoundingClientRect().height || activeNode.offsetHeight || 1);
+    const offset = Math.max(0, window.scrollY - pageTop);
+    offsetPercent = Math.max(0, Math.min(1, offset / pageHeight));
+  }
+
+  return { pageIndex: Math.max(1, active), offsetPercent };
+};
+
+const handleBeforeUnload = () => {
+  try {
+    const snap = getActivePageSnapshotFromDOM();
+    writeSavedProgress(snap.pageIndex, snap.offsetPercent);
+  } catch {
+    // swallow
+  }
 };
 
 const restoreSavedPage = async () => {
@@ -1485,10 +1581,104 @@ const restoreSavedPage = async () => {
   currentPage.value = normalizedSaved;
   await nextTick();
 
+  const savedOffsetPercent = savedProgress?.offsetPercent;
   const target = document.querySelector<HTMLElement>(`.reader-page[data-page-index='${currentPage.value}']`);
-  if (target) {
-    target.scrollIntoView({ block: "start" });
-  }
+    if (target) {
+      // Try to ensure the target image is actually loading so we can compute
+      // an accurate height. Prefer using the image's intrinsic dimensions
+      // (naturalWidth/naturalHeight) scaled to the container width. Fallback
+      // to stored pageImageDimensions, then to measured element height.
+      let height = Math.max(1, target.getBoundingClientRect().height || target.offsetHeight || 1);
+      const start = performance.now();
+
+      // Find <img> inside the figure if any
+      const img = target.querySelector<HTMLImageElement>("img");
+      if (img) {
+        // If image not yet loaded but has data-src, kickstart load so we can
+        // observe natural sizes. If already loading/loaded, we'll use natural sizes.
+        try {
+          const ds = img.dataset.src;
+          if (ds && (!img.currentSrc || img.currentSrc === PLACEHOLDER_IMAGE)) {
+            img.src = ds;
+            img.removeAttribute("data-src");
+          }
+        } catch {
+          // ignore set src failures
+        }
+
+        // Wait for naturalWidth/naturalHeight to be available or timeout
+        const waitForImage = () => new Promise<void>((resolve) => {
+          if (img.naturalWidth && img.naturalHeight) {
+            resolve();
+            return;
+          }
+          let resolved = false;
+          const onDone = () => { if (!resolved) { resolved = true; cleanup(); resolve(); } };
+          const cleanup = () => { img.removeEventListener('load', onDone); img.removeEventListener('error', onDone); };
+          img.addEventListener('load', onDone);
+          img.addEventListener('error', onDone);
+          // timeout fallback
+          window.setTimeout(() => { onDone(); }, 900);
+        });
+
+        // Wait (brief) for image data to become available
+        await waitForImage();
+
+        // If we have intrinsic dimensions, compute expected rendered height
+        if (img.naturalWidth && img.naturalHeight) {
+          const containerWidth = Math.max(1, img.clientWidth || target.clientWidth || target.getBoundingClientRect().width || 1);
+          const expected = Math.round((containerWidth * img.naturalHeight) / img.naturalWidth);
+          if (height < 24) {
+            height = expected;
+          }
+        }
+      }
+
+      // If still don't have good height, try stored pageImageDimensions
+      if (height < 24) {
+        try {
+          const pageIndex = currentPage.value;
+          const pageObj = readerData.value?.pages.find((p) => p.pageIndex === Number(pageIndex));
+          if (pageObj) {
+            const dims = pageImageDimensions.value[pageObj.id];
+            if (dims && Number.isFinite(dims.width) && Number.isFinite(dims.height) && dims.width > 0) {
+              const containerWidth = Math.max(1, target.clientWidth || target.getBoundingClientRect().width || 1);
+              height = Math.round((containerWidth * dims.height) / dims.width);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // final short poll if needed
+      while (height < 24 && performance.now() - start < 800) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 50));
+        height = Math.max(1, target.getBoundingClientRect().height || target.offsetHeight || 1);
+      }
+
+      if (typeof savedOffsetPercent === "number" && Number.isFinite(savedOffsetPercent)) {
+        // subtract fixed header height if any (so content isn't hidden under header)
+        let headerOffset = 0;
+        try {
+          const headerEl = document.querySelector<HTMLElement>(".reader-head");
+          if (headerEl) {
+            const cs = window.getComputedStyle(headerEl);
+            if (cs.position === "fixed") {
+              headerOffset = headerEl.offsetHeight || 0;
+            }
+          }
+        } catch {
+          headerOffset = 0;
+        }
+
+        const top = Math.max(0, target.offsetTop + Math.max(0, Math.min(1, savedOffsetPercent)) * height - headerOffset);
+        window.scrollTo({ top, left: 0 });
+      } else {
+        target.scrollIntoView({ block: "start" });
+      }
+    }
 
   saveProgress(currentPage.value);
 };
@@ -1568,7 +1758,7 @@ const trimFarImagesForMobileMemory = () => {
   }, 800); // Debounce 800ms
 };
 
-const restoreNearCurrentImages = () => {
+const restoreNearCurrentImages = async () => {
   const start = Math.max(1, currentPage.value - 1);
   const end = currentPage.value + 1;
 
@@ -1584,11 +1774,18 @@ const restoreNearCurrentImages = () => {
     img.src = ds;
     img.removeAttribute("data-src");
   }
+
+  // Allow DOM to settle after we swapped in nearby images so subsequent
+  // scrolling (restore) can compute positions more accurately.
+  await nextTick();
 };
 
 const handleReaderVisibilityChange = () => {
   if (document.visibilityState === "hidden") {
-    writeSavedProgress(currentPage.value);
+    // Use DOM-derived active page + offset to ensure we capture the latest
+    // visible position even if scroll handlers haven't updated `currentPage` yet.
+    const snap = getActivePageSnapshotFromDOM();
+    writeSavedProgress(snap.pageIndex, snap.offsetPercent);
     releaseOffscreenImagesOnBackground();
     teardownFallbackLazyLoader();
     if (imageObserver) {
@@ -1603,7 +1800,10 @@ const handleReaderVisibilityChange = () => {
 };
 
 const handleReaderPageHide = () => {
-  writeSavedProgress(currentPage.value);
+  // When page is being hidden, compute active page + offset from DOM to
+  // avoid race where scroll event hasn't updated `currentPage` yet.
+  const snap = getActivePageSnapshotFromDOM();
+  writeSavedProgress(snap.pageIndex, snap.offsetPercent);
   releaseOffscreenImagesOnBackground();
 };
 
@@ -1644,8 +1844,11 @@ const loadReader = async () => {
   await loadChapterComments();
 
   imageFallbackMap.value = {};
+  // Ensure nearby images are restored first so layout stabilizes before we
+  // scroll to the saved page. This reduces cases where loading images
+  // shifts content and moves the target out of view.
+  await restoreNearCurrentImages();
   await restoreSavedPage();
-  restoreNearCurrentImages();
   lastScrollY.value = window.scrollY;
   setReaderHeaderVisibility(true, true);
 };
@@ -1840,6 +2043,9 @@ onMounted(async () => {
   document.addEventListener("visibilitychange", handleReaderVisibilityChange);
   window.addEventListener("pagehide", handleReaderPageHide);
   window.addEventListener("pageshow", handleReaderPageShow);
+  // Ensure we persist the most-recent visible page if user reloads/refreshes
+  // before the scroll handler has a chance to update reactive state.
+  window.addEventListener("beforeunload", handleBeforeUnload);
 });
 
 onBeforeUnmount(() => {
@@ -1850,12 +2056,16 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", handleReaderVisibilityChange);
   window.removeEventListener("pagehide", handleReaderPageHide);
   window.removeEventListener("pageshow", handleReaderPageShow);
+  window.removeEventListener("beforeunload", handleBeforeUnload);
   teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);
   }
   if (mobileMemoryTrimDebounceTimer) {
     window.clearTimeout(mobileMemoryTrimDebounceTimer);
+  }
+  if (offsetSaveDebounceTimer) {
+    window.clearTimeout(offsetSaveDebounceTimer);
   }
   if (imageObserver) {
     imageObserver.disconnect();
