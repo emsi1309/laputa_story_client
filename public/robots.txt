@@ -7,4 +7,4 @@ Disallow: /profile
 Disallow: /library
 
 Host: truyenchill.online
-Sitemap: https://truyenchill.online/api/public/seo/sitemap.xml
+Sitemap: https://truyenchill.online/api/public/seo/sitemap-index.xml
