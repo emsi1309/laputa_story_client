@@ -14,6 +14,7 @@ import TranslationRequestView from "./views/TranslationRequestView.vue";
 import AdvertisingContactView from "./views/AdvertisingContactView.vue";
 import { trackPageView } from "./lib/analytics";
 import { updateDocumentSeo } from "./lib/seo";
+import { f } from "vue-router/dist/router-CWoNjPRp.mjs";
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -64,7 +65,7 @@ const router = createRouter({
             seoTitle: "Tìm kiếm truyện tranh",
             seoDescription: "Tìm truyện theo tên, tác giả, thể loại, năm phát hành và trạng thái tại Truyện Chill.",
             seoKeywords: "tìm truyện, tìm kiếm truyện tranh, lọc truyện",
-            seoNoindex: true,
+            seoNoindex: false, // Allow indexing search results for SEO benefits, but meta tags will be set dynamically in afterEach hook.
           },
         },
         {
@@ -114,7 +115,7 @@ const router = createRouter({
           meta: {
             seoTitle: "Đọc chương truyện",
             seoDescription: "Trình đọc chương truyện trên Truyện Chill.",
-            seoNoindex: true,
+            seoNoindex: false, // Allow indexing reader pages for SEO benefits, but meta tags will be set dynamically in afterEach hook.
           },
         },
         {
@@ -149,7 +150,7 @@ const router = createRouter({
         guestOnly: true,
         seoTitle: "Đăng nhập",
         seoDescription: "Đăng nhập tài khoản Truyện Chill.",
-        seoNoindex: true,
+        seoNoindex: false, // Allow indexing login page for SEO benefits, but meta tags will be set dynamically in afterEach hook.  
       },
     },
     {
@@ -160,7 +161,7 @@ const router = createRouter({
         guestOnly: true,
         seoTitle: "Đăng ký",
         seoDescription: "Tạo tài khoản Truyện Chill để theo dõi truyện yêu thích.",
-        seoNoindex: true,
+        seoNoindex: false, // Allow indexing registration page for SEO benefits, but meta tags will be set dynamically in afterEach hook.
       },
     },
   ],
