@@ -195,24 +195,48 @@
     </article>
 
     <div class="reader-scroll-controls">
-      <button
-        type="button"
-        class="reader-scroll-btn"
-        aria-label="Lên đầu trang"
-        title="Lên đầu trang"
-        @click="scrollToTop"
-      >
-        <span aria-hidden="true">&uarr;</span>
-      </button>
-      <button
-        type="button"
-        class="reader-scroll-btn"
-        aria-label="Xuống cuối trang"
-        title="Xuống cuối trang"
-        @click="scrollToBottom"
-      >
-        <span aria-hidden="true">&darr;</span>
-      </button>
+      <!-- Desktop / non-mobile: preserve existing simple click buttons -->
+      <template v-if="!isMobileDevice">
+        <button
+          type="button"
+          class="reader-scroll-btn"
+          aria-label="Lên đầu trang"
+          title="Lên đầu trang"
+          @click="scrollToTop"
+        >
+          <span aria-hidden="true">&uarr;</span>
+        </button>
+        <button
+          type="button"
+          class="reader-scroll-btn"
+          aria-label="Xuống cuối trang"
+          title="Xuống cuối trang"
+          @click="scrollToBottom"
+        >
+          <span aria-hidden="true">&darr;</span>
+        </button>
+      </template>
+
+      <!-- Mobile: single rectangular press-and-drag seek control.
+           User presses and drags finger up/down to scroll quickly. -->
+      <template v-else>
+        <button
+          type="button"
+          class="reader-scroll-btn reader-scroll-btn-mobile-rect"
+          aria-label="Giữ và kéo để cuộn nhanh"
+          title="Nhấn giữ và kéo lên/xuống để cuộn nhanh"
+          @touchstart.prevent="startMobileDrag($event)"
+          @touchmove.prevent="mobileDragMove($event)"
+          @touchend.prevent="stopHoldScroll"
+          @touchcancel.prevent="stopHoldScroll"
+        >
+          <span class="reader-scroll-mobile-handle">
+            <svg width="18" height="36" viewBox="0 0 18 36" fill="none" aria-hidden="true">
+              <path d="M9 6 L5 10 M9 6 L13 10 M9 30 L5 26 M9 30 L13 26" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+      </template>
     </div>
   </section>
 </template>
@@ -1457,6 +1481,134 @@ const scrollToBottom = () => {
   window.scrollTo({ top: totalHeight, behavior: "smooth" });
 };
 
+// Mobile-only: detect mobile devices (touch-capable or small viewport)
+const isMobileDevice = ref(false);
+
+const updateIsMobileDevice = () => {
+  try {
+    const hasTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    const smallViewport = typeof window !== 'undefined' && window.matchMedia && window.matchMedia(`(max-width: ${MOBILE_VIEWPORT_MAX_WIDTH}px)`).matches;
+    isMobileDevice.value = Boolean(hasTouch || smallViewport);
+  } catch {
+    isMobileDevice.value = false;
+  }
+};
+
+// Hold-to-scroll state and handlers for mobile
+const holdActive = ref(false);
+const holdDirection = ref<'up' | 'down' | null>(null);
+let holdStartY = 0;
+let holdLastY = 0;
+let holdRaf: number | null = null;
+let lastHoldTime = 0;
+
+const stopHoldScroll = () => {
+  holdActive.value = false;
+  holdDirection.value = null;
+  holdStartY = 0;
+  holdLastY = 0;
+  if (holdRaf) {
+    window.cancelAnimationFrame(holdRaf as number);
+    holdRaf = null;
+  }
+
+  // remove any document-level handlers attached during mobile drag
+  try {
+    if (_documentTouchMoveHandler) {
+      document.removeEventListener("touchmove", _documentTouchMoveHandler as EventListener);
+      _documentTouchMoveHandler = null;
+    }
+    if (_documentTouchEndHandler) {
+      document.removeEventListener("touchend", _documentTouchEndHandler as EventListener);
+      _documentTouchEndHandler = null;
+    }
+  } catch {
+    // ignore removal errors
+  }
+};
+
+const doHoldScrollTick = (now: number) => {
+  if (!holdActive.value) return;
+  const elapsed = Math.max(1, now - (lastHoldTime || now));
+  lastHoldTime = now;
+
+  // base speed px per second: make it very fast for fast-scroll handle
+  const baseSpeed = 1000; // px/sec - increased for extra-fast immediate scroll
+
+  // compute drag distance to modulate speed (very small drag -> large multiplier)
+  const drag = Math.max(0, Math.abs(holdLastY - holdStartY));
+  const multiplier = 1 + Math.min(30, drag / 10);
+
+  const deltaPx = (baseSpeed * multiplier) * (elapsed / 1000);
+  const dir = holdDirection.value ?? 'down';
+  const scrollDelta = dir === 'up' ? -deltaPx : deltaPx;
+  window.scrollBy({ top: scrollDelta, left: 0, behavior: 'auto' });
+
+  holdRaf = window.requestAnimationFrame(doHoldScrollTick);
+};
+
+// legacy startHoldScroll removed: mobile now uses startMobileDrag and desktop
+// uses click handlers. Kept updateHoldScroll/doHoldScrollTick for behavior.
+
+const updateHoldScroll = (event: TouchEvent) => {
+  if (!holdActive.value || !event.touches || !event.touches.length) return;
+  holdLastY = event.touches[0].clientY;
+  // change direction if user drags past start
+  const delta = holdLastY - holdStartY;
+  if (Math.abs(delta) > 8) {
+    holdDirection.value = delta < 0 ? 'up' : 'down';
+  }
+};
+
+// Mobile rectangular drag control: start a drag session but don't set direction
+// until user moves. This allows pressing then dragging up/down to control
+// fast scroll speed and direction.
+let _documentTouchMoveHandler: ((e: TouchEvent) => void) | null = null;
+let _documentTouchEndHandler: ((e: TouchEvent) => void) | null = null;
+
+const startMobileDrag = (event: TouchEvent) => {
+  if (!event.touches || !event.touches.length) return;
+  holdActive.value = true;
+  // start immediately scrolling down by default; user can flip direction by dragging
+  holdDirection.value = 'down';
+  holdStartY = event.touches[0].clientY;
+  holdLastY = holdStartY;
+  lastHoldTime = performance.now();
+  if (holdRaf) {
+    window.cancelAnimationFrame(holdRaf as number);
+  }
+
+  // attach document-level handlers so dragging outside the button still works
+  if (!_documentTouchMoveHandler) {
+    _documentTouchMoveHandler = (e: TouchEvent) => {
+      try { e.preventDefault(); } catch {}
+      mobileDragMove(e);
+    };
+    document.addEventListener("touchmove", _documentTouchMoveHandler as EventListener, { passive: false });
+  }
+
+  if (!_documentTouchEndHandler) {
+    _documentTouchEndHandler = (_e: TouchEvent) => stopHoldScroll();
+    document.addEventListener("touchend", _documentTouchEndHandler as EventListener);
+  }
+
+  // Start RAF loop immediately so press-and-hold scrolls right away.
+  if (!holdRaf) {
+    lastHoldTime = performance.now();
+    holdRaf = window.requestAnimationFrame(doHoldScrollTick);
+  }
+};
+
+const mobileDragMove = (event: TouchEvent) => {
+  // delegate to existing update logic which sets holdLastY and direction
+  updateHoldScroll(event);
+  // If we've set a direction and RAF isn't running, start the RAF loop so scrolling begins.
+  if (holdDirection.value && !holdRaf) {
+    lastHoldTime = performance.now();
+    holdRaf = window.requestAnimationFrame(doHoldScrollTick);
+  }
+};
+
 const updateCurrentPageByScroll = () => {
   const currentY = window.scrollY;
   const now = performance.now();
@@ -2038,6 +2190,9 @@ onMounted(async () => {
   blockedImageHosts.value = readBlockedImageHosts();
   await loadReader();
   lastScrollY.value = window.scrollY;
+  // initialize mobile detection and listen for viewport changes
+  updateIsMobileDevice();
+  window.addEventListener("resize", updateIsMobileDevice);
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
   window.addEventListener("keydown", handleReaderKeydown);
   document.addEventListener("visibilitychange", handleReaderVisibilityChange);
@@ -2057,6 +2212,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("pagehide", handleReaderPageHide);
   window.removeEventListener("pageshow", handleReaderPageShow);
   window.removeEventListener("beforeunload", handleBeforeUnload);
+  window.removeEventListener("resize", updateIsMobileDevice);
+  // ensure any running hold-scroll loop is stopped
+  stopHoldScroll();
   teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);

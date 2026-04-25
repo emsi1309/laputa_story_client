@@ -1350,6 +1350,36 @@ a {
   opacity: 0.9;
 }
 
+/* Mobile rectangular drag control */
+
+.reader-scroll-btn-mobile-rect {
+  width: 40px;
+  height: 88px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: rgba(17,24,39,0.28); /* slight translucent background so handle is visible but not blocking */
+  border: 1px solid rgba(148,163,184,0.12);
+  cursor: grab;
+  touch-action: none; /* allow precise touchmove handling */
+  backdrop-filter: blur(4px);
+}
+
+.reader-scroll-btn-mobile-rect:active {
+  cursor: grabbing;
+  transform: translateY(-1px);
+  opacity: 0.98;
+}
+
+.reader-scroll-mobile-handle svg {
+  display: block;
+  color: rgba(248,250,252,0.95);
+}
+
+.reader-scroll-mobile-handle svg path { stroke: currentColor; }
+
 .auth-screen {
   min-height: calc(100vh - 110px);
   display: grid;
