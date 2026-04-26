@@ -32,7 +32,17 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://localhost:80",
+        target: "http://127.0.0.1:80", // Proxy API requests to nginx
+        changeOrigin: true,
+      },
+    },
+  },
+    preview: {
+    port: 4173,
+    host: true,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:80", // Proxy API requests to nginx
         changeOrigin: true,
       },
     },
