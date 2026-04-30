@@ -1,6 +1,9 @@
 <template>
   <div class="site-shell" :class="{ 'reader-mode': isReaderRoute }">
-    <SiteHeader v-show="isHeaderVisible" />
+    <SiteHeader
+      class="site-header-shell"
+      :class="{ 'is-reader-hidden': isReaderRoute && !isHeaderVisible }"
+    />
     <main class="site-main">
       <router-view />
     </main>

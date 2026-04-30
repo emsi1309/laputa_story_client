@@ -391,6 +391,41 @@ const getPageImageStyle = (page: ReaderPageItem) => {
   } as const;
 };
 
+const getReaderPageByIndex = (pageIndex: number): ReaderPageItem | null => {
+  if (!readerData.value || !Number.isFinite(pageIndex) || pageIndex <= 0) {
+    return null;
+  }
+  return readerData.value.pages.find((page) => page.pageIndex === pageIndex) || null;
+};
+
+// Only release an image to placeholder after we know exact dimensions.
+// This avoids layout jump on very tall pages that were never fully loaded.
+const canReleasePageImage = (pageIndex: number, imageElement: HTMLImageElement): boolean => {
+  const page = getReaderPageByIndex(pageIndex);
+  if (!page) {
+    return false;
+  }
+
+  const existing = pageImageDimensions.value[page.id];
+  if (existing && existing.width > 0 && existing.height > 0) {
+    return true;
+  }
+
+  const width = imageElement.naturalWidth;
+  const height = imageElement.naturalHeight;
+  if (!width || !height) {
+    return false;
+  }
+
+  const nextDimensions = {
+    ...pageImageDimensions.value,
+    [page.id]: { width, height },
+  };
+  pageImageDimensions.value = nextDimensions;
+  writeStoredPageImageDimensions(nextDimensions);
+  return true;
+};
+
 const currentReaderProgressPercent = () => {
   if (!readerData.value || !readerData.value.pages.length) {
     return 0;
@@ -1853,6 +1888,10 @@ const releaseOffscreenImagesOnBackground = () => {
       return;
     }
 
+    if (!canReleasePageImage(pageIndex, img)) {
+      return;
+    }
+
     if (!img.dataset.src) {
       img.dataset.src = currentSrc;
     }
@@ -1875,7 +1914,6 @@ const trimFarImagesForMobileMemory = () => {
 
   // Debounce: chỉ trim sau khi scroll dừng 800ms
   mobileMemoryTrimDebounceTimer = window.setTimeout(() => {
-    const keepFrom = Math.max(1, currentPage.value - MOBILE_MEMORY_TRIM_RADIUS);
     const keepTo = currentPage.value + MOBILE_MEMORY_TRIM_RADIUS;
     const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
     let releasedAny = false;
@@ -1883,12 +1921,27 @@ const trimFarImagesForMobileMemory = () => {
     images.forEach((img) => {
       const figure = img.closest<HTMLElement>(".reader-page");
       const pageIndex = Number(figure?.dataset.pageIndex || "0");
-      if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
+      if (!pageIndex) {
+        return;
+      }
+
+      // Important: do not release already-read pages above current viewport.
+      // Releasing images above the anchor can still trigger large scroll jumps
+      // on some mobile browsers, even when lazy placeholders are used.
+      if (pageIndex <= currentPage.value) {
+        return;
+      }
+
+      if (pageIndex <= keepTo) {
         return;
       }
 
       const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
       if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
+        return;
+      }
+
+      if (!canReleasePageImage(pageIndex, img)) {
         return;
       }
 
