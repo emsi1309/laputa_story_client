@@ -14,7 +14,6 @@ import TranslationRequestView from "./views/TranslationRequestView.vue";
 import AdvertisingContactView from "./views/AdvertisingContactView.vue";
 import { trackPageView } from "./lib/analytics";
 import { updateDocumentSeo } from "./lib/seo";
-import { f } from "vue-router/dist/router-CWoNjPRp.mjs";
 
 declare module "vue-router" {
   interface RouteMeta {
