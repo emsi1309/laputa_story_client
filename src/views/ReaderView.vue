@@ -75,8 +75,7 @@
         :data-page-index="page.pageIndex"
       >
         <img
-          :data-src="resolveImageSource(page)"
-          :src="PLACEHOLDER_IMAGE"
+          :src="resolveImageSource(page)"
           :alt="`Page ${page.pageIndex}`"
           :style="getPageImageStyle(page)"
           loading="lazy"
@@ -283,22 +282,12 @@ const BLOCKED_IMAGE_HOSTS_KEY = "reader:blocked_image_hosts";
 const READER_CACHE_TTL_MS = 30 * 60 * 1000;
 const READER_PROGRESS_FRESH_MS = 6 * 60 * 60 * 1000;
 const READER_ANALYTICS_ENABLED = false;
-const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-let imageObserver: IntersectionObserver | null = null;
-let fallbackLazyCleanup: (() => void) | null = null;
-let prefetchedImageSources = new Set<string>();
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
 const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
 const MAX_IMAGE_RETRY_ATTEMPTS = 2;
 const MOBILE_VIEWPORT_MAX_WIDTH = 768;
-const MOBILE_LAZY_ROOT_MARGIN = "180px";
-const DESKTOP_LAZY_ROOT_MARGIN = "400px";
-const DESKTOP_PREFETCH_NEIGHBOR_COUNT = 1;
-const BACKGROUND_IMAGE_KEEP_RADIUS = 2; // Tăng từ 1 lên 2 để giữ nhiều ảnh hơn
-const MOBILE_MEMORY_TRIM_RADIUS = 5; // Tăng từ 3 lên 5 cho mobile
-const MOBILE_MEMORY_TRIM_INTERVAL_MS = 1000; // Tăng từ 450ms lên 1s để giảm tần suất
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
 const HEADER_SCROLL_DELTA = 14;
@@ -310,8 +299,6 @@ const headerAutoPauseUntil = ref(0);
 const chapterStartedAtMs = ref(0);
 const chapterCompletedTracked = ref(false);
 const chapterExitTracked = ref(false);
-let lastMobileMemoryTrimAt = 0;
-let mobileMemoryTrimDebounceTimer: number | null = null;
 let offsetSaveDebounceTimer: number | null = null;
 
 type ThreadedCommentItem = CommentItem & {
@@ -396,34 +383,6 @@ const getReaderPageByIndex = (pageIndex: number): ReaderPageItem | null => {
     return null;
   }
   return readerData.value.pages.find((page) => page.pageIndex === pageIndex) || null;
-};
-
-// Only release an image to placeholder after we know exact dimensions.
-// This avoids layout jump on very tall pages that were never fully loaded.
-const canReleasePageImage = (pageIndex: number, imageElement: HTMLImageElement): boolean => {
-  const page = getReaderPageByIndex(pageIndex);
-  if (!page) {
-    return false;
-  }
-
-  const existing = pageImageDimensions.value[page.id];
-  if (existing && existing.width > 0 && existing.height > 0) {
-    return true;
-  }
-
-  const width = imageElement.naturalWidth;
-  const height = imageElement.naturalHeight;
-  if (!width || !height) {
-    return false;
-  }
-
-  const nextDimensions = {
-    ...pageImageDimensions.value,
-    [page.id]: { width, height },
-  };
-  pageImageDimensions.value = nextDimensions;
-  writeStoredPageImageDimensions(nextDimensions);
-  return true;
 };
 
 const currentReaderProgressPercent = () => {
@@ -1154,32 +1113,6 @@ const shouldUseProxyByDefault = (rawUrl: string) => {
   return Boolean(host);
 };
 
-const shouldUseConservativeLazyStrategy = () => {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  const isMobileViewport = window.matchMedia(`(max-width: ${MOBILE_VIEWPORT_MAX_WIDTH}px)`).matches;
-  const navigatorWithHints = window.navigator as Navigator & {
-    connection?: {
-      saveData?: boolean;
-      effectiveType?: string;
-    };
-    deviceMemory?: number;
-  };
-  const saveDataEnabled = Boolean(navigatorWithHints.connection?.saveData);
-  const effectiveType = (navigatorWithHints.connection?.effectiveType || "").toLowerCase();
-  const isSlowNetwork = effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g";
-  const hasLowMemory = typeof navigatorWithHints.deviceMemory === "number"
-    && navigatorWithHints.deviceMemory > 0
-    && navigatorWithHints.deviceMemory <= 4;
-
-  return isMobileViewport || saveDataEnabled || isSlowNetwork || hasLowMemory;
-};
-
-const getLazyRootMargin = () =>
-  (shouldUseConservativeLazyStrategy() ? MOBILE_LAZY_ROOT_MARGIN : DESKTOP_LAZY_ROOT_MARGIN);
-
 const markImageAsBlocked = (page: ReaderPageItem, event?: Event) => {
   const imageElement = event?.target instanceof HTMLImageElement
     ? event.target
@@ -1682,8 +1615,6 @@ const updateCurrentPageByScroll = () => {
     }
   }
 
-  trimFarImagesForMobileMemory();
-
   // Debounced save of offset for intra-page scroll (user scrolls within the
   // same very tall image). This ensures we persist offsetPercent even when
   // pageIndex does not change. We won't overwrite an existing offset with a
@@ -1781,18 +1712,6 @@ const restoreSavedPage = async () => {
       // Find <img> inside the figure if any
       const img = target.querySelector<HTMLImageElement>("img");
       if (img) {
-        // If image not yet loaded but has data-src, kickstart load so we can
-        // observe natural sizes. If already loading/loaded, we'll use natural sizes.
-        try {
-          const ds = img.dataset.src;
-          if (ds && (!img.currentSrc || img.currentSrc === PLACEHOLDER_IMAGE)) {
-            img.src = ds;
-            img.removeAttribute("data-src");
-          }
-        } catch {
-          // ignore set src failures
-        }
-
         // Wait for naturalWidth/naturalHeight to be available or timeout
         const waitForImage = () => new Promise<void>((resolve) => {
           if (img.naturalWidth && img.naturalHeight) {
@@ -1870,151 +1789,11 @@ const restoreSavedPage = async () => {
   saveProgress(currentPage.value);
 };
 
-const releaseOffscreenImagesOnBackground = () => {
-  const keepFrom = Math.max(1, currentPage.value - BACKGROUND_IMAGE_KEEP_RADIUS);
-  const keepTo = currentPage.value + BACKGROUND_IMAGE_KEEP_RADIUS;
-  const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
-
-  images.forEach((img) => {
-    const figure = img.closest<HTMLElement>(".reader-page");
-    const pageIndex = Number(figure?.dataset.pageIndex || "0");
-
-    if (!pageIndex || (pageIndex >= keepFrom && pageIndex <= keepTo)) {
-      return;
-    }
-
-    const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
-    if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
-      return;
-    }
-
-    if (!canReleasePageImage(pageIndex, img)) {
-      return;
-    }
-
-    if (!img.dataset.src) {
-      img.dataset.src = currentSrc;
-    }
-    img.src = PLACEHOLDER_IMAGE;
-    if (imageObserver) {
-      imageObserver.observe(img);
-    }
-  });
-};
-
-const trimFarImagesForMobileMemory = () => {
-  if (!shouldUseConservativeLazyStrategy()) {
-    return;
-  }
-
-  // Clear existing timer
-  if (mobileMemoryTrimDebounceTimer) {
-    window.clearTimeout(mobileMemoryTrimDebounceTimer);
-  }
-
-  // Debounce: chỉ trim sau khi scroll dừng 800ms
-  mobileMemoryTrimDebounceTimer = window.setTimeout(() => {
-    const keepTo = currentPage.value + MOBILE_MEMORY_TRIM_RADIUS;
-    const images = document.querySelectorAll<HTMLImageElement>(".reader-page img");
-    let releasedAny = false;
-
-    images.forEach((img) => {
-      const figure = img.closest<HTMLElement>(".reader-page");
-      const pageIndex = Number(figure?.dataset.pageIndex || "0");
-      if (!pageIndex) {
-        return;
-      }
-
-      // Important: do not release already-read pages above current viewport.
-      // Releasing images above the anchor can still trigger large scroll jumps
-      // on some mobile browsers, even when lazy placeholders are used.
-      if (pageIndex <= currentPage.value) {
-        return;
-      }
-
-      if (pageIndex <= keepTo) {
-        return;
-      }
-
-      const currentSrc = (img.currentSrc || img.getAttribute("src") || "").trim();
-      if (!currentSrc || currentSrc === PLACEHOLDER_IMAGE) {
-        return;
-      }
-
-      if (!canReleasePageImage(pageIndex, img)) {
-        return;
-      }
-
-      if (!img.dataset.src) {
-        img.dataset.src = currentSrc;
-      }
-      img.src = PLACEHOLDER_IMAGE;
-      if (imageObserver) {
-        imageObserver.observe(img);
-      }
-      releasedAny = true;
-    });
-
-    if (releasedAny && typeof IntersectionObserver === "undefined") {
-      observeLazyImages();
-    }
-
-    mobileMemoryTrimDebounceTimer = null;
-  }, 800); // Debounce 800ms
-};
-
-const restoreNearCurrentImages = async () => {
-  const start = Math.max(1, currentPage.value - 1);
-  const end = currentPage.value + 1;
-
-  for (let idx = start; idx <= end; idx += 1) {
-    const img = document.querySelector<HTMLImageElement>(
-      `.reader-page[data-page-index='${idx}'] img[data-src]`
-    );
-    const ds = img?.dataset.src;
-    if (!img || !ds) {
-      continue;
-    }
-
-    img.src = ds;
-    img.removeAttribute("data-src");
-  }
-
-  // Allow DOM to settle after we swapped in nearby images so subsequent
-  // scrolling (restore) can compute positions more accurately.
-  await nextTick();
-};
-
 const handleReaderVisibilityChange = () => {
   if (document.visibilityState === "hidden") {
-    // Use DOM-derived active page + offset to ensure we capture the latest
-    // visible position even if scroll handlers haven't updated `currentPage` yet.
     const snap = getActivePageSnapshotFromDOM();
     writeSavedProgress(snap.pageIndex, snap.offsetPercent);
-    releaseOffscreenImagesOnBackground();
-    teardownFallbackLazyLoader();
-    if (imageObserver) {
-      imageObserver.disconnect();
-      imageObserver = null;
-    }
-    return;
   }
-
-  observeLazyImages();
-  restoreNearCurrentImages();
-};
-
-const handleReaderPageHide = () => {
-  // When page is being hidden, compute active page + offset from DOM to
-  // avoid race where scroll event hasn't updated `currentPage` yet.
-  const snap = getActivePageSnapshotFromDOM();
-  writeSavedProgress(snap.pageIndex, snap.offsetPercent);
-  releaseOffscreenImagesOnBackground();
-};
-
-const handleReaderPageShow = () => {
-  observeLazyImages();
-  restoreNearCurrentImages();
 };
 
 const loadReader = async () => {
@@ -2037,22 +1816,16 @@ const loadReader = async () => {
   const hasSecondarySource = data.pages.some((page) => Boolean(page.sourceImageUrl?.trim()));
   selectedImageServer.value = backendDefaultServer === 2 && hasSecondarySource ? 2 : 1;
 
-  prefetchedImageSources = new Set<string>();
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
   loadStoredPageImageDimensions();
   await nextTick();
   startChapterAnalyticsSession();
-  observeLazyImages();
 
   await loadChapterOptions(data.comic.slug);
   await loadChapterComments();
 
   imageFallbackMap.value = {};
-  // Ensure nearby images are restored first so layout stabilizes before we
-  // scroll to the saved page. This reduces cases where loading images
-  // shifts content and moves the target out of view.
-  await restoreNearCurrentImages();
   await restoreSavedPage();
   lastScrollY.value = window.scrollY;
   setReaderHeaderVisibility(true, true);
@@ -2109,124 +1882,6 @@ const handleReaderKeydown = (event: KeyboardEvent) => {
   }
 };
 
-const prefetchNeighbors = (pageIndex: number) => {
-  if (!readerData.value || shouldUseConservativeLazyStrategy()) {
-    return;
-  }
-
-  for (let offset = 1; offset <= DESKTOP_PREFETCH_NEIGHBOR_COUNT; offset += 1) {
-    const idx = pageIndex + offset;
-    const page = readerData.value.pages.find((p) => p.pageIndex === idx);
-    if (page) {
-      const src = resolveImageSource(page);
-      if (src && !prefetchedImageSources.has(src)) {
-        prefetchedImageSources.add(src);
-        const img = new Image();
-        img.decoding = "async";
-        img.src = src;
-      }
-    }
-  }
-};
-
-const teardownFallbackLazyLoader = () => {
-  if (!fallbackLazyCleanup) {
-    return;
-  }
-
-  fallbackLazyCleanup();
-  fallbackLazyCleanup = null;
-};
-
-const observeLazyImages = () => {
-  if (imageObserver) {
-    imageObserver.disconnect();
-    imageObserver = null;
-  }
-
-  teardownFallbackLazyLoader();
-
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (typeof IntersectionObserver === "undefined") {
-    const nodes = Array.from(document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]"));
-    if (!nodes.length) {
-      return;
-    }
-
-    const fallbackMargin = Number.parseInt(getLazyRootMargin(), 10) || 180;
-
-    const loadNearbyFallbackImages = () => {
-      const viewportBottom = window.scrollY + window.innerHeight + fallbackMargin;
-      nodes.forEach((img) => {
-        const ds = img.dataset.src;
-        if (!ds) {
-          return;
-        }
-
-        const absoluteTop = img.getBoundingClientRect().top + window.scrollY;
-        if (absoluteTop <= viewportBottom) {
-          img.src = ds;
-          img.removeAttribute("data-src");
-        }
-      });
-
-      const hasPendingImage = nodes.some((img) => Boolean(img.dataset.src));
-      if (!hasPendingImage) {
-        teardownFallbackLazyLoader();
-      }
-    };
-
-    const onFallbackUpdate = () => {
-      loadNearbyFallbackImages();
-    };
-
-    window.addEventListener("scroll", onFallbackUpdate, { passive: true });
-    window.addEventListener("resize", onFallbackUpdate);
-    fallbackLazyCleanup = () => {
-      window.removeEventListener("scroll", onFallbackUpdate);
-      window.removeEventListener("resize", onFallbackUpdate);
-    };
-
-    nextTick(() => {
-      loadNearbyFallbackImages();
-    });
-    return;
-  }
-
-  imageObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting || entry.intersectionRatio > 0) {
-          const img = entry.target as HTMLImageElement;
-          const ds = img.dataset.src;
-          if (ds) {
-            img.src = ds;
-            const fig = img.closest("figure");
-            const pageIndex = fig ? Number(fig.dataset.pageIndex) : NaN;
-            if (!Number.isNaN(pageIndex)) {
-              prefetchNeighbors(pageIndex);
-            }
-            img.removeAttribute("data-src");
-          }
-          if (imageObserver) imageObserver.unobserve(img);
-        }
-      });
-    },
-    { root: null, rootMargin: getLazyRootMargin(), threshold: 0.01 }
-  );
-
-  nextTick(() => {
-    const nodes = document.querySelectorAll<HTMLImageElement>(".reader-pages img[data-src]");
-    nodes.forEach((img) => {
-      if (imageObserver) imageObserver.observe(img);
-    });
-  });
-};
-
-
 watch(
   () => [route.params.comicSlug, route.params.chapterSlug],
   async () => {
@@ -2249,8 +1904,6 @@ onMounted(async () => {
   window.addEventListener("scroll", updateCurrentPageByScroll, { passive: true });
   window.addEventListener("keydown", handleReaderKeydown);
   document.addEventListener("visibilitychange", handleReaderVisibilityChange);
-  window.addEventListener("pagehide", handleReaderPageHide);
-  window.addEventListener("pageshow", handleReaderPageShow);
   // Ensure we persist the most-recent visible page if user reloads/refreshes
   // before the scroll handler has a chance to update reactive state.
   window.addEventListener("beforeunload", handleBeforeUnload);
@@ -2262,25 +1915,15 @@ onBeforeUnmount(() => {
   window.removeEventListener("scroll", updateCurrentPageByScroll);
   window.removeEventListener("keydown", handleReaderKeydown);
   document.removeEventListener("visibilitychange", handleReaderVisibilityChange);
-  window.removeEventListener("pagehide", handleReaderPageHide);
-  window.removeEventListener("pageshow", handleReaderPageShow);
   window.removeEventListener("beforeunload", handleBeforeUnload);
   window.removeEventListener("resize", updateIsMobileDevice);
   // ensure any running hold-scroll loop is stopped
   stopHoldScroll();
-  teardownFallbackLazyLoader();
   if (syncTimer) {
     window.clearTimeout(syncTimer);
   }
-  if (mobileMemoryTrimDebounceTimer) {
-    window.clearTimeout(mobileMemoryTrimDebounceTimer);
-  }
   if (offsetSaveDebounceTimer) {
     window.clearTimeout(offsetSaveDebounceTimer);
-  }
-  if (imageObserver) {
-    imageObserver.disconnect();
-    imageObserver = null;
   }
 });
 </script>
