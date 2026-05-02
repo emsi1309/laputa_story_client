@@ -205,21 +205,45 @@ onMounted(async () => {
 }
 
 .home-load-more-btn {
-  padding: 0.55rem 1.35rem;
+  padding: 0.6rem 1.5rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.06);
-  color: inherit;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 48%, #1d4ed8 100%);
+  color: #f8fafc;
   font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 4px 14px rgba(37, 99, 235, 0.35);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
 }
 
 .home-load-more-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  filter: brightness(1.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 6px 22px rgba(56, 189, 248, 0.4);
+  transform: translateY(-1px);
+}
+
+.home-load-more-btn:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.home-load-more-btn:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.75);
+  outline-offset: 2px;
 }
 
 .home-load-more-btn:disabled {
-  opacity: 0.65;
+  opacity: 0.55;
   cursor: not-allowed;
+  filter: grayscale(0.35);
+  box-shadow: none;
 }
 </style>
