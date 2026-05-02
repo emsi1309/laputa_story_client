@@ -35,7 +35,7 @@
 
   <section class="container section-block">
     <div class="section-head">
-      <h2 class="section-title">Truyện Chill</h2>
+      <h2 class="section-title">Truyện Xuyên Không</h2>
     </div>
     <HorizontalComicRow :comics="exclusiveComics" analytics-context="home_exclusive" />
   </section>
@@ -69,7 +69,11 @@
       />
     </div>
 
-    <PaginationControl :page="page" :total-pages="totalPages" @change="changePage" />
+    <div class="home-load-more-wrap" v-if="browseHasMore">
+      <button type="button" class="home-load-more-btn" :disabled="browseLoading" @click="loadMoreComics">
+        {{ browseLoading ? "Đang tải…" : "Tải thêm truyện" }}
+      </button>
+    </div>
   </section>
 </template>
 
@@ -82,14 +86,11 @@ import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
-import PaginationControl from "../components/PaginationControl.vue";
-
 type HomePayload = {
   latestUpdated?: ComicCard[];
   hot?: ComicCard[];
   exclusive?: ComicCard[];
-  latestTotalElements?: number;
-  latestTotalPages?: number;
+  latestHasMore?: boolean;
   latestPageSize?: number;
 };
 
@@ -100,8 +101,9 @@ const exclusive = ref<ComicCard[]>([]);
 const comics = ref<ComicCard[]>([]);
 const genres = ref<GenreItem[]>([]);
 const genreId = ref<number | null>(null);
-const page = ref(0);
-const totalPages = ref(1);
+const browseNextPage = ref(1);
+const browseHasMore = ref(false);
+const browseLoading = ref(false);
 const keyword = ref("");
 const communityItems = [
   {
@@ -130,7 +132,8 @@ const loadHome = async () => {
   comics.value = data.latestUpdated || [];
   hot.value = data.hot || [];
   exclusive.value = data.exclusive || data.latestUpdated || [];
-  totalPages.value = data.latestTotalPages || 1;
+  browseNextPage.value = 1;
+  browseHasMore.value = data.latestHasMore === true;
 };
 
 const loadGenres = async () => {
@@ -140,24 +143,41 @@ const loadGenres = async () => {
 const loadBrowse = async () => {
   const { data } = await api.get("/api/public/comics", {
     params: {
-      page: page.value,
+      page: 0,
       size: 21,
       genreId: genreId.value ?? undefined,
     },
   });
   comics.value = data.content || [];
-  totalPages.value = data.totalPages || 1;
+  browseNextPage.value = 1;
+  browseHasMore.value = data.hasNext === true;
+};
+
+const loadMoreComics = async () => {
+  if (browseLoading.value || !browseHasMore.value) {
+    return;
+  }
+  browseLoading.value = true;
+  try {
+    const { data } = await api.get("/api/public/comics", {
+      params: {
+        page: browseNextPage.value,
+        size: 21,
+        genreId: genreId.value ?? undefined,
+      },
+    });
+    const chunk = data.content || [];
+    comics.value = [...comics.value, ...chunk];
+    browseNextPage.value += 1;
+    browseHasMore.value = data.hasNext === true;
+  } finally {
+    browseLoading.value = false;
+  }
 };
 
 const setGenre = (nextGenreId: number | null) => {
   genreId.value = nextGenreId;
-  page.value = 0;
-  loadBrowse();
-};
-
-const changePage = (nextPage: number) => {
-  page.value = nextPage;
-  loadBrowse();
+  void loadBrowse();
 };
 
 const goSearch = () => {
@@ -176,3 +196,30 @@ onMounted(async () => {
   await Promise.all([loadHome(), loadGenres()]);
 });
 </script>
+
+<style scoped>
+.home-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+.home-load-more-btn {
+  padding: 0.55rem 1.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.home-load-more-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.home-load-more-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+</style>

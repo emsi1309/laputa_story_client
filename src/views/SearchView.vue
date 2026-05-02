@@ -34,7 +34,7 @@
       />
     </div>
 
-    <PaginationControl :page="page" :total-pages="totalPages" @change="changePage" />
+    <PaginationControl :page="page" :total-pages="0" :has-next="hasNextPage" @change="changePage" />
   </section>
 </template>
 
@@ -59,7 +59,7 @@ const releaseYear = ref<number | null>(null);
 const genres = ref<GenreItem[]>([]);
 const comics = ref<ComicCard[]>([]);
 const page = ref(0);
-const totalPages = ref(1);
+const hasNextPage = ref(false);
 
 const selectedGenreValue = computed({
   get: () => (selectedGenre.value == null ? "" : String(selectedGenre.value)),
@@ -92,7 +92,7 @@ const loadResult = async () => {
     },
   });
   comics.value = data.content || [];
-  totalPages.value = data.totalPages || 1;
+  hasNextPage.value = data.hasNext === true;
 };
 
 const submitSearch = () => {
