@@ -75,10 +75,11 @@
         :data-page-index="page.pageIndex"
       >
         <img
-          :src="resolveImageSource(page)"
+          :src="readerPageImageSrc(page)"
           :alt="`Page ${page.pageIndex}`"
           :style="getPageImageStyle(page)"
-          loading="lazy"
+          :loading="lazyLoadedPageIds.has(page.id) && page.pageIndex <= READER_EAGER_PAGE_COUNT ? 'eager' : undefined"
+          :fetchpriority="lazyLoadedPageIds.has(page.id) && page.pageIndex <= READER_EAGER_PAGE_COUNT ? 'high' : undefined"
           decoding="async"
           referrerpolicy="no-referrer"
           @load="handlePageImageLoad(page, $event)"
@@ -287,6 +288,16 @@ const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
 const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
 const MAX_IMAGE_RETRY_ATTEMPTS = 2;
+/** First N pages load immediately; others wait until near viewport (scroll lazy). */
+const READER_EAGER_PAGE_COUNT = 3;
+/** When resuming mid-chapter, also unlock pages around the saved index. */
+const READER_LAZY_RESUME_NEIGHBORS = 2;
+const READER_LAZY_ROOT_MARGIN = "320px 0px";
+const READER_LAZY_PLACEHOLDER_SRC =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="transparent"/></svg>'
+  );
 const MOBILE_VIEWPORT_MAX_WIDTH = 768;
 const COMMENT_COOLDOWN_MS = 60 * 1000;
 const REPORT_COOLDOWN_MS = 60 * 1000;
@@ -300,6 +311,9 @@ const chapterStartedAtMs = ref(0);
 const chapterCompletedTracked = ref(false);
 const chapterExitTracked = ref(false);
 let offsetSaveDebounceTimer: number | null = null;
+let readerLazyObserver: IntersectionObserver | null = null;
+
+const lazyLoadedPageIds = ref<Set<number>>(new Set());
 
 type ThreadedCommentItem = CommentItem & {
   depth: number;
@@ -340,6 +354,10 @@ const currentReaderPath = () => {
 };
 
 const handlePageImageLoad = (page: ReaderPageItem, event: Event) => {
+  if (!lazyLoadedPageIds.value.has(page.id)) {
+    return;
+  }
+
   const imageElement = event.target instanceof HTMLImageElement ? event.target : null;
   if (!imageElement) {
     return;
@@ -668,6 +686,81 @@ const writeStoredPageImageDimensions = (dimensions: Record<number, { width: numb
 
 const loadStoredPageImageDimensions = () => {
   pageImageDimensions.value = readStoredPageImageDimensions();
+};
+
+const teardownReaderLazyObserver = () => {
+  if (readerLazyObserver) {
+    readerLazyObserver.disconnect();
+    readerLazyObserver = null;
+  }
+};
+
+const seedReaderLazyLoadedPages = () => {
+  const pages = readerData.value?.pages;
+  if (!pages?.length) {
+    lazyLoadedPageIds.value = new Set();
+    return;
+  }
+
+  const savedProgress = readSavedProgress();
+  const normalizedSaved =
+    savedProgress?.pageIndex && savedProgress.pageIndex > 0 ? savedProgress.pageIndex : 1;
+  const isFreshSavedProgress = Boolean(
+    savedProgress?.savedAt && Date.now() - savedProgress.savedAt <= READER_PROGRESS_FRESH_MS
+  );
+  const shouldResumeByProgress = normalizedSaved > 1 && isFreshSavedProgress;
+  const shouldResume = shouldForceRestoreSavedPage.value || shouldResumeByProgress;
+  const resumePage = !shouldResume || normalizedSaved <= 1 ? 1 : normalizedSaved;
+
+  const next = new Set<number>();
+  for (const p of pages) {
+    if (p.pageIndex <= READER_EAGER_PAGE_COUNT) {
+      next.add(p.id);
+    }
+  }
+  if (resumePage > 1) {
+    const lo = Math.max(1, resumePage - READER_LAZY_RESUME_NEIGHBORS);
+    const hi = Math.min(pages.length, resumePage + READER_LAZY_RESUME_NEIGHBORS);
+    for (const p of pages) {
+      if (p.pageIndex >= lo && p.pageIndex <= hi) {
+        next.add(p.id);
+      }
+    }
+  }
+  lazyLoadedPageIds.value = next;
+};
+
+const setupReaderLazyObserver = () => {
+  teardownReaderLazyObserver();
+  const pages = readerData.value?.pages;
+  if (!pages?.length) {
+    return;
+  }
+
+  readerLazyObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        const pageIndex = Number((entry.target as HTMLElement).dataset.pageIndex || 0);
+        const page = readerData.value?.pages.find((p) => p.pageIndex === pageIndex);
+        if (!page || lazyLoadedPageIds.value.has(page.id)) {
+          continue;
+        }
+        const next = new Set(lazyLoadedPageIds.value);
+        next.add(page.id);
+        lazyLoadedPageIds.value = next;
+      }
+    },
+    { root: null, rootMargin: READER_LAZY_ROOT_MARGIN, threshold: 0.01 }
+  );
+
+  requestAnimationFrame(() => {
+    document.querySelectorAll<HTMLElement>(".reader-page").forEach((el) => {
+      readerLazyObserver?.observe(el);
+    });
+  });
 };
 
 const getReaderCacheKey = (comicSlug: string, chapterSlug: string) =>
@@ -1108,12 +1201,23 @@ const resolveImageSource = (page: ReaderData["pages"][number]) => {
   return rawSource;
 };
 
+const readerPageImageSrc = (page: ReaderPageItem) => {
+  if (lazyLoadedPageIds.value.has(page.id)) {
+    return resolveImageSource(page);
+  }
+  return READER_LAZY_PLACEHOLDER_SRC;
+};
+
 const shouldUseProxyByDefault = (rawUrl: string) => {
   const host = parseExternalImageHost(rawUrl);
   return Boolean(host);
 };
 
 const markImageAsBlocked = (page: ReaderPageItem, event?: Event) => {
+  if (!lazyLoadedPageIds.value.has(page.id)) {
+    return;
+  }
+
   const imageElement = event?.target instanceof HTMLImageElement
     ? event.target
     : null;
@@ -1797,6 +1901,8 @@ const handleReaderVisibilityChange = () => {
 };
 
 const loadReader = async () => {
+  teardownReaderLazyObserver();
+
   const comicSlug = String(route.params.comicSlug);
   const chapterSlug = String(route.params.chapterSlug);
   const shouldCallApi = shouldRequestReaderApi(comicSlug, chapterSlug);
@@ -1818,6 +1924,7 @@ const loadReader = async () => {
 
   readerData.value = data;
   selectedChapterSlug.value = data.chapter.slug;
+  seedReaderLazyLoadedPages();
   loadStoredPageImageDimensions();
   await nextTick();
   startChapterAnalyticsSession();
@@ -1829,6 +1936,8 @@ const loadReader = async () => {
   await restoreSavedPage();
   lastScrollY.value = window.scrollY;
   setReaderHeaderVisibility(true, true);
+  await nextTick();
+  setupReaderLazyObserver();
 };
 
 const isEditableTarget = (target: EventTarget | null) => {
@@ -1911,6 +2020,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   trackChapterExitIfNeeded();
+  teardownReaderLazyObserver();
   setReaderHeaderVisibility(true, true);
   window.removeEventListener("scroll", updateCurrentPageByScroll);
   window.removeEventListener("keydown", handleReaderKeydown);
