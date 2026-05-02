@@ -1,6 +1,11 @@
 :root {
   font-family: "Be Vietnam Pro", "Segoe UI", sans-serif;
   color: #e2e8f0;
+  --site-announcement-h: 0px;
+}
+
+.app-below-announcement {
+  padding-top: var(--site-announcement-h);
 }
 
 * {
@@ -42,7 +47,7 @@ a {
 
 .qq-header {
   position: sticky;
-  top: 0;
+  top: var(--site-announcement-h);
   z-index: 40;
 }
 
@@ -1127,6 +1132,69 @@ a {
 .chapter-list.chapter-list-scroll::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 999px;
+}
+
+.site-announcement-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  box-sizing: border-box;
+  border-bottom: 1px solid #334155;
+  background: #0b1120;
+}
+
+.site-announcement-inner {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: min(1240px, calc(100% - 26px));
+  margin: 0 auto;
+  background: linear-gradient(90deg, #0f172a 0%, #1e293b 55%, #0f172a 100%);
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+
+.site-announcement-badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #f8fafc;
+  background: #1d4ed8;
+}
+
+.site-announcement-marquee {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 8px 12px 8px 0;
+}
+
+.site-announcement-track {
+  display: inline-block;
+  white-space: nowrap;
+  padding-left: 100%;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.45;
+  animation-name: site-announcement-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes site-announcement-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
 }
 
 .reader-wrap {
