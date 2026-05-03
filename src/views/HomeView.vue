@@ -28,16 +28,30 @@
 
   <section class="container section-block">
     <div class="section-head">
-      <h2 class="section-title">Truyện Hay</h2>
+      <h2 class="section-title">Top truyện tuần</h2>
     </div>
-    <HorizontalComicRow :comics="featuredComics" analytics-context="home_hot" />
+    <HorizontalComicRow :comics="featuredComics" analytics-context="home_weekly_top" />
   </section>
 
   <section class="container section-block">
     <div class="section-head">
-      <h2 class="section-title">Truyện Xuyên Không</h2>
+      <h2 class="section-title">Truyện huyền huyễn</h2>
+    </div>
+    <HorizontalComicRow :comics="fantasyWuxiaComics" analytics-context="home_fantasy_wuxia" />
+  </section>
+
+  <section class="container section-block">
+    <div class="section-head">
+      <h2 class="section-title">Truyện xuyên không</h2>
     </div>
     <HorizontalComicRow :comics="exclusiveComics" analytics-context="home_exclusive" />
+  </section>
+
+  <section class="container section-block">
+    <div class="section-head">
+      <h2 class="section-title">Truyện chuyển sinh</h2>
+    </div>
+    <HorizontalComicRow :comics="reincarnationComics" analytics-context="home_reincarnation" />
   </section>
 
   <section class="container section-block">
@@ -90,14 +104,21 @@ type HomePayload = {
   latestUpdated?: ComicCard[];
   hot?: ComicCard[];
   exclusive?: ComicCard[];
+  fantasyWuxia?: ComicCard[];
+  reincarnation?: ComicCard[];
   latestHasMore?: boolean;
   latestPageSize?: number;
 };
 
 const router = useRouter();
 
+const HOT_ROW_LIMIT = 21;
+const LATEST_PAGE_SIZE = 14;
+
 const hot = ref<ComicCard[]>([]);
 const exclusive = ref<ComicCard[]>([]);
+const fantasyWuxia = ref<ComicCard[]>([]);
+const reincarnation = ref<ComicCard[]>([]);
 const comics = ref<ComicCard[]>([]);
 const genres = ref<GenreItem[]>([]);
 const genreId = ref<number | null>(null);
@@ -124,14 +145,18 @@ const communityItems = [
   },
 ];
 
-const featuredComics = computed(() => hot.value.slice(0, 21));
-const exclusiveComics = computed(() => exclusive.value.slice(0, 21));
+const featuredComics = computed(() => hot.value.slice(0, HOT_ROW_LIMIT));
+const fantasyWuxiaComics = computed(() => fantasyWuxia.value.slice(0, HOT_ROW_LIMIT));
+const exclusiveComics = computed(() => exclusive.value.slice(0, HOT_ROW_LIMIT));
+const reincarnationComics = computed(() => reincarnation.value.slice(0, HOT_ROW_LIMIT));
 
 const loadHome = async () => {
   const { data } = await api.get<HomePayload>("/api/public/home");
   comics.value = data.latestUpdated || [];
   hot.value = data.hot || [];
-  exclusive.value = data.exclusive || data.latestUpdated || [];
+  exclusive.value = data.exclusive || [];
+  fantasyWuxia.value = data.fantasyWuxia || [];
+  reincarnation.value = data.reincarnation || [];
   browseNextPage.value = 1;
   browseHasMore.value = data.latestHasMore === true;
 };
@@ -144,7 +169,7 @@ const loadBrowse = async () => {
   const { data } = await api.get("/api/public/comics", {
     params: {
       page: 0,
-      size: 21,
+      size: LATEST_PAGE_SIZE,
       genreId: genreId.value ?? undefined,
     },
   });
@@ -162,7 +187,7 @@ const loadMoreComics = async () => {
     const { data } = await api.get("/api/public/comics", {
       params: {
         page: browseNextPage.value,
-        size: 21,
+        size: LATEST_PAGE_SIZE,
         genreId: genreId.value ?? undefined,
       },
     });
