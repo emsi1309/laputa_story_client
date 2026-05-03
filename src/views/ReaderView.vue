@@ -247,6 +247,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
 import { getApiBaseUrl, getMediaBaseUrl } from "../lib/runtimeConfig";
+import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
 import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
 
@@ -1262,6 +1263,36 @@ const formatChapterLabel = (chapter: ChapterBrief) => {
   return chapter.title;
 };
 
+const toPlainText = (value: string | null | undefined, maxLength: number) => {
+  const normalized = (value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "Đọc truyện tranh miễn phí, cập nhật chương mới liên tục tại Truyện Chill.";
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+};
+
+const applyReaderSeo = () => {
+  if (!readerData.value) {
+    return;
+  }
+
+  const { comic, chapter } = readerData.value;
+  const chapterNumber = chapter.number ?? chapter.sortIndex;
+  const chapterTitle = `${comic.title} - chapter ${chapterNumber}`;
+  const chapterSummary = toPlainText(chapter.title, 120);
+
+  updateDocumentSeo({
+    title: `${chapterTitle} - Truyện Chill`,
+    description: `${chapterSummary}. Đọc ${comic.title} chapter ${chapterNumber} tại Truyện Chill.`,
+    keywords: `${comic.title}, chapter ${chapterNumber}, đọc truyện tranh, truyện chill`,
+    path: `/read/${comic.slug}/${chapter.slug}`,
+    type: "article",
+  });
+};
+
 const jumpToSelectedChapter = async () => {
   if (!readerData.value || !selectedChapterSlug.value) {
     return;
@@ -1928,6 +1959,7 @@ const loadReader = async () => {
   loadStoredPageImageDimensions();
   await nextTick();
   startChapterAnalyticsSession();
+  applyReaderSeo();
 
   await loadChapterOptions(data.comic.slug);
   await loadChapterComments();
