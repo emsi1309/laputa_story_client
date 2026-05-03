@@ -291,7 +291,7 @@ const MAX_IMAGE_RETRY_ATTEMPTS = 2;
 /** First N pages load immediately; others wait until near viewport (scroll lazy). */
 const READER_EAGER_PAGE_COUNT = 3;
 /** When resuming mid-chapter, also unlock pages around the saved index. */
-const READER_LAZY_RESUME_NEIGHBORS = 2;
+const READER_LAZY_RESUME_NEIGHBORS = 3;
 const READER_LAZY_ROOT_MARGIN = "320px 0px";
 const READER_LAZY_PLACEHOLDER_SRC =
   "data:image/svg+xml," +
