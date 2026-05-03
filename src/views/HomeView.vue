@@ -34,22 +34,40 @@
   </section>
 
   <section class="container section-block">
-    <div class="section-head">
+    <div class="section-head home-genre-section-head">
       <h2 class="section-title">Truyện huyền huyễn</h2>
+      <router-link
+        class="section-view-all"
+        :to="{ name: 'search', query: { genre: String(GENRE_ID_FANTASY_WUXIA) } }"
+      >
+        Xem toàn bộ
+      </router-link>
     </div>
     <HorizontalComicRow :comics="fantasyWuxiaComics" analytics-context="home_fantasy_wuxia" />
   </section>
 
   <section class="container section-block">
-    <div class="section-head">
+    <div class="section-head home-genre-section-head">
       <h2 class="section-title">Truyện xuyên không</h2>
+      <router-link
+        class="section-view-all"
+        :to="{ name: 'search', query: { genre: String(GENRE_ID_ISEKAI) } }"
+      >
+        Xem toàn bộ
+      </router-link>
     </div>
     <HorizontalComicRow :comics="exclusiveComics" analytics-context="home_exclusive" />
   </section>
 
   <section class="container section-block">
-    <div class="section-head">
+    <div class="section-head home-genre-section-head">
       <h2 class="section-title">Truyện chuyển sinh</h2>
+      <router-link
+        class="section-view-all"
+        :to="{ name: 'search', query: { genre: String(GENRE_ID_REINCARNATION) } }"
+      >
+        Xem toàn bộ
+      </router-link>
     </div>
     <HorizontalComicRow :comics="reincarnationComics" analytics-context="home_reincarnation" />
   </section>
@@ -114,6 +132,11 @@ const router = useRouter();
 
 const HOT_ROW_LIMIT = 21;
 const LATEST_PAGE_SIZE = 14;
+
+/** Sync with backend `app.public.*GenreId` — search filters by genre id */
+const GENRE_ID_FANTASY_WUXIA = 26;
+const GENRE_ID_ISEKAI = 10;
+const GENRE_ID_REINCARNATION = 13;
 
 const hot = ref<ComicCard[]>([]);
 const exclusive = ref<ComicCard[]>([]);
@@ -223,6 +246,34 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.home-genre-section-head {
+  flex-wrap: wrap;
+}
+
+.section-view-all {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fb923c;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 6px 4px;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.section-view-all:hover {
+  color: #ffedd5;
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.section-view-all:focus-visible {
+  outline: 2px solid rgba(251, 146, 60, 0.65);
+  outline-offset: 2px;
+}
+
 .home-load-more-wrap {
   display: flex;
   justify-content: center;
