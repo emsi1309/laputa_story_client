@@ -5,24 +5,24 @@
         <h1>Yêu cầu dịch truyện</h1>
         <p>
           Bạn có thể gửi đề xuất truyện cần dịch để đội ngũ biên tập xem xét.
-          Vui lòng điền đầy đủ thông tin để chúng tôi liên hệ lại nhanh hơn.
+          Chỉ cần nhập tên truyện, các thông tin còn lại là tuỳ chọn.
         </p>
       </header>
 
       <form class="support-form-grid" @submit.prevent="submitForm">
         <label class="support-field">
-          <span>Họ và tên *</span>
-          <input v-model="form.fullName" maxlength="120" required placeholder="Nguyễn Văn A" />
+          <span>Họ và tên (tuỳ chọn)</span>
+          <input v-model="form.fullName" maxlength="120" placeholder="Nguyễn Văn A" />
         </label>
 
         <label class="support-field">
-          <span>Email *</span>
-          <input v-model="form.email" type="email" maxlength="160" required placeholder="name@example.com" />
+          <span>Email (tuỳ chọn)</span>
+          <input v-model="form.email" type="email" maxlength="160" placeholder="name@example.com" />
         </label>
 
         <label class="support-field">
-          <span>Số điện thoại/Zalo *</span>
-          <input v-model="form.phone" maxlength="40" required placeholder="09xxxxxxxx" />
+          <span>Số điện thoại/Zalo (tuỳ chọn)</span>
+          <input v-model="form.phone" maxlength="40" placeholder="09xxxxxxxx" />
         </label>
 
         <label class="support-field">
@@ -31,28 +31,26 @@
         </label>
 
         <label class="support-field support-field-full">
-          <span>Link truyện nguồn *</span>
+          <span>Link truyện nguồn (tuỳ chọn)</span>
           <input
             v-model="form.comicSourceUrl"
             type="url"
             maxlength="700"
-            required
             placeholder="https://..."
           />
         </label>
 
         <label class="support-field">
-          <span>Ngôn ngữ mong muốn *</span>
-          <input v-model="form.targetLanguage" maxlength="80" required placeholder="Ví dụ: Hàn - Việt" />
+          <span>Ngôn ngữ mong muốn (tuỳ chọn)</span>
+          <input v-model="form.targetLanguage" maxlength="80" placeholder="Ví dụ: Hàn - Việt" />
         </label>
 
         <label class="support-field support-field-full">
-          <span>Nội dung yêu cầu *</span>
+          <span>Nội dung yêu cầu (tuỳ chọn)</span>
           <textarea
             v-model="form.message"
             rows="5"
             maxlength="2000"
-            required
             placeholder="Bạn có thể bổ sung lý do đề xuất, độ hot, cộng đồng quan tâm..."
           ></textarea>
         </label>
@@ -119,13 +117,13 @@ const submitForm = async () => {
 
   try {
     await api.post("/api/public/support-requests/translation", {
-      fullName: form.fullName.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
+      fullName: form.fullName.trim() || null,
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
       comicTitle: form.comicTitle.trim(),
-      comicSourceUrl: form.comicSourceUrl.trim(),
-      targetLanguage: form.targetLanguage.trim(),
-      message: form.message.trim(),
+      comicSourceUrl: form.comicSourceUrl.trim() || null,
+      targetLanguage: form.targetLanguage.trim() || null,
+      message: form.message.trim() || null,
     });
 
     form.comicTitle = "";
