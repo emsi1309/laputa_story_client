@@ -290,10 +290,10 @@ const MAX_BLOCKED_IMAGE_HOSTS = 40;
 const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
 const MAX_IMAGE_RETRY_ATTEMPTS = 2;
 /** First N pages load immediately; others wait until near viewport (scroll lazy). */
-const READER_EAGER_PAGE_COUNT = 3;
+const READER_EAGER_PAGE_COUNT = 6;
 /** When resuming mid-chapter, also unlock pages around the saved index. */
-const READER_LAZY_RESUME_NEIGHBORS = 3;
-const READER_LAZY_ROOT_MARGIN = "320px 0px";
+const READER_LAZY_RESUME_NEIGHBORS = 6;
+const READER_LAZY_ROOT_MARGIN = "640px 0px";
 const READER_LAZY_PLACEHOLDER_SRC =
   "data:image/svg+xml," +
   encodeURIComponent(
