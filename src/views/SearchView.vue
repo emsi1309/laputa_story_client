@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
@@ -60,6 +60,48 @@ const genres = ref<GenreItem[]>([]);
 const comics = ref<ComicCard[]>([]);
 const page = ref(0);
 const hasNextPage = ref(false);
+const isSyncingFromRoute = ref(false);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const SEARCH_DEBOUNCE_MS = 1000;
+const SEARCH_RESULT_SIZE = 20;
+
+const buildSearchQuery = () => ({
+  q: query.value || undefined,
+  author: author.value || undefined,
+  genre: selectedGenre.value ?? undefined,
+  status: selectedStatus.value || undefined,
+  year: releaseYear.value ?? undefined,
+});
+
+const isRouteQueryEqualToCurrent = () => {
+  const rawGenre = route.query.genre as string | undefined;
+  const rawYear = route.query.year as string | undefined;
+
+  return (
+    (route.query.q as string | undefined) === (query.value || undefined) &&
+    (route.query.author as string | undefined) === (author.value || undefined) &&
+    (rawGenre ? Number(rawGenre) : null) === selectedGenre.value &&
+    ((route.query.status as string | undefined) || "").toUpperCase() === selectedStatus.value &&
+    (rawYear ? Number(rawYear) : null) === releaseYear.value
+  );
+};
+
+const scheduleRouteSync = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+
+  searchDebounceTimer = setTimeout(() => {
+    if (isRouteQueryEqualToCurrent()) {
+      return;
+    }
+
+    page.value = 0;
+    void router.replace({ name: "search", query: buildSearchQuery() });
+  }, SEARCH_DEBOUNCE_MS);
+};
 
 const selectedGenreValue = computed({
   get: () => (selectedGenre.value == null ? "" : String(selectedGenre.value)),
@@ -88,7 +130,7 @@ const loadResult = async () => {
       status: selectedStatus.value || undefined,
       year: releaseYear.value ?? undefined,
       page: page.value,
-      size: 18,
+      size: SEARCH_RESULT_SIZE,
     },
   });
   comics.value = data.content || [];
@@ -105,16 +147,7 @@ const submitSearch = () => {
   });
 
   page.value = 0;
-  router.push({
-    name: "search",
-    query: {
-      q: query.value || undefined,
-      author: author.value || undefined,
-      genre: selectedGenre.value ?? undefined,
-      status: selectedStatus.value || undefined,
-      year: releaseYear.value ?? undefined,
-    },
-  });
+  router.push({ name: "search", query: buildSearchQuery() });
 };
 
 const changePage = (nextPage: number) => {
@@ -123,17 +156,34 @@ const changePage = (nextPage: number) => {
 };
 
 const syncFromRoute = async () => {
-  query.value = (route.query.q as string) || "";
-  author.value = (route.query.author as string) || "";
-  const rawGenre = route.query.genre as string | undefined;
-  selectedGenre.value = rawGenre ? Number(rawGenre) : null;
-  selectedStatus.value = ((route.query.status as string) || "").toUpperCase();
-  const rawYear = route.query.year as string | undefined;
-  const year = rawYear ? Number(rawYear) : null;
-  releaseYear.value = year && !Number.isNaN(year) ? year : null;
-  page.value = 0;
-  await loadResult();
+  isSyncingFromRoute.value = true;
+  try {
+    query.value = (route.query.q as string) || "";
+    author.value = (route.query.author as string) || "";
+    const rawGenre = route.query.genre as string | undefined;
+    selectedGenre.value = rawGenre ? Number(rawGenre) : null;
+    selectedStatus.value = ((route.query.status as string) || "").toUpperCase();
+    const rawYear = route.query.year as string | undefined;
+    const year = rawYear ? Number(rawYear) : null;
+    releaseYear.value = year && !Number.isNaN(year) ? year : null;
+    page.value = 0;
+    await loadResult();
+  } finally {
+    isSyncingFromRoute.value = false;
+  }
 };
+
+watch(
+  [query, author, selectedGenre, selectedStatus, releaseYear],
+  () => {
+    if (isSyncingFromRoute.value) {
+      return;
+    }
+
+    page.value = 0;
+    scheduleRouteSync();
+  }
+);
 
 watch(
   () => route.query,
@@ -141,6 +191,12 @@ watch(
     await syncFromRoute();
   }
 );
+
+onBeforeUnmount(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+});
 
 onMounted(async () => {
   await Promise.all([loadGenres(), syncFromRoute()]);

@@ -23,10 +23,50 @@
           </button>
         </div>
 
-        <form v-show="showHeaderControls" class="qq-search" @submit.prevent="submitSearch">
-          <input v-model="keyword" placeholder="Bạn muốn tìm truyện gì" />
-          <button type="submit">Tìm</button>
-        </form>
+        <div ref="searchBoxEl" v-show="showHeaderControls" class="qq-search-box">
+          <form class="qq-search" @submit.prevent="submitSearch">
+            <input
+              v-model="keyword"
+              placeholder="Bạn muốn tìm truyện gì"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="handleSearchFocus"
+              @keydown.escape.prevent="closeSearchSuggestions"
+            />
+            <button type="submit">Tìm</button>
+          </form>
+
+          <div v-if="showSearchSuggestions" class="qq-search-dropdown">
+            <p v-if="searchNotice" class="qq-search-empty">{{ searchNotice }}</p>
+
+            <div v-else class="qq-search-results">
+              <router-link
+                v-for="comic in searchSuggestions"
+                :key="comic.id"
+                :to="`/comic/${comic.slug}`"
+                class="qq-search-result"
+                @click="closeSearchSuggestions"
+              >
+                <img :src="comicCoverSource(comic)" :alt="comic.title" />
+                <div class="qq-search-result-body">
+                  <strong>{{ comic.title }}</strong>
+                  <span>{{ comic.author || "Đang cập nhật" }}</span>
+                  <small v-if="comic.latestChapter">
+                    Chương {{ comic.latestChapter.number ?? comic.latestChapter.sortIndex }}
+                  </small>
+                </div>
+              </router-link>
+            </div>
+
+            <router-link
+              class="qq-search-see-all"
+              :to="{ name: 'search', query: { q: keyword || undefined } }"
+              @click="closeSearchSuggestions"
+            >
+              Xem toàn bộ kết quả
+            </router-link>
+          </div>
+        </div>
 
         <div v-show="showHeaderControls" class="qq-top-actions">
           <div class="qq-auth" v-if="!auth.isAuthenticated">
@@ -135,14 +175,22 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../lib/api";
+import { resolvePublicImageUrl } from "../lib/image";
 import { fetchPublicGenres } from "../lib/publicData";
 import { useAuthStore } from "../stores/auth";
-import type { GenreItem, NotificationItem, NotificationPage } from "../types";
+import type { ComicCard, GenreItem, NotificationItem, NotificationPage } from "../types";
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 const keyword = ref("");
+const searchBoxEl = ref<HTMLElement | null>(null);
+const searchSuggestions = ref<ComicCard[]>([]);
+const searchLoading = ref(false);
+const searchOpen = ref(false);
+const searchNotice = ref("");
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let searchRequestId = 0;
 const genres = ref<GenreItem[]>([]);
 const notifications = ref<NotificationItem[]>([]);
 const unreadCount = ref(0);
@@ -155,11 +203,93 @@ const isMobileHeaderOpen = ref(true);
 
 const MOBILE_BREAKPOINT = 980;
 const NOTIFICATION_LIST_CACHE_MS = 60_000;
+const SEARCH_RESULT_LIMIT = 20;
+const SEARCH_DEBOUNCE_MS = 1000;
+const FALLBACK_COVER = "https://dummyimage.com/300x420/e2e8f0/475569.png&text=No+Cover";
 
 const showHeaderControls = computed(() => !isMobileViewport.value || isMobileHeaderOpen.value);
+const showSearchSuggestions = computed(() => searchOpen.value && keyword.value.trim().length > 0);
 
 const submitSearch = () => {
   router.push({ name: "search", query: { q: keyword.value || undefined } });
+};
+
+const closeSearchSuggestions = () => {
+  searchOpen.value = false;
+};
+
+const handleSearchFocus = () => {
+  if (keyword.value.trim()) {
+    searchOpen.value = true;
+  }
+};
+
+const clearSearchSuggestions = () => {
+  searchSuggestions.value = [];
+  searchNotice.value = "";
+  searchLoading.value = false;
+};
+
+const comicCoverSource = (comic: ComicCard) => resolvePublicImageUrl(comic.coverUrl) || FALLBACK_COVER;
+
+const loadSearchSuggestions = async () => {
+  const term = keyword.value.trim();
+  if (!term) {
+    clearSearchSuggestions();
+    closeSearchSuggestions();
+    return;
+  }
+
+  const requestId = ++searchRequestId;
+  searchLoading.value = true;
+  searchNotice.value = "";
+
+  try {
+    const { data } = await api.get("/api/public/comics", {
+      params: {
+        query: term,
+        page: 0,
+        size: SEARCH_RESULT_LIMIT,
+      },
+    });
+
+    if (requestId !== searchRequestId) {
+      return;
+    }
+
+    searchSuggestions.value = data.content || [];
+    searchNotice.value = searchSuggestions.value.length ? "" : "Không tìm thấy kết quả phù hợp.";
+    searchOpen.value = true;
+  } catch {
+    if (requestId === searchRequestId) {
+      searchSuggestions.value = [];
+      searchNotice.value = "Không tải được kết quả tìm kiếm.";
+      searchOpen.value = true;
+    }
+  } finally {
+    if (requestId === searchRequestId) {
+      searchLoading.value = false;
+    }
+  }
+};
+
+const scheduleSearchSuggestions = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+
+  const term = keyword.value.trim();
+  if (!term) {
+    clearSearchSuggestions();
+    closeSearchSuggestions();
+    return;
+  }
+
+  searchOpen.value = true;
+  searchDebounceTimer = setTimeout(() => {
+    void loadSearchSuggestions();
+  }, SEARCH_DEBOUNCE_MS);
 };
 
 const closeNavMenu = () => {
@@ -208,6 +338,12 @@ const handleDocumentClick = (event: MouseEvent) => {
   if (!target) {
     return;
   }
+
+  if (searchBoxEl.value?.contains(target)) {
+    return;
+  }
+
+  closeSearchSuggestions();
 
   if (target.closest(".qq-nav-dropdown")) {
     return;
@@ -296,6 +432,10 @@ const loadGenres = async () => {
 
 onMounted(loadGenres);
 
+watch(keyword, () => {
+  scheduleSearchSuggestions();
+});
+
 onMounted(async () => {
   detectMobileViewport();
   document.addEventListener("click", handleDocumentClick);
@@ -309,12 +449,16 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("click", handleDocumentClick);
   window.removeEventListener("resize", detectMobileViewport);
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
 });
 
 watch(
   () => route.fullPath,
   () => {
     closeNavMenu();
+    closeSearchSuggestions();
     if (isMobileViewport.value) {
       isMobileHeaderOpen.value = false;
       showNotificationPanel.value = false;
