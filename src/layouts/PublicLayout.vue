@@ -5,7 +5,11 @@
       :class="{ 'is-reader-hidden': isReaderRoute && !isHeaderVisible }"
     />
     <main class="site-main">
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <keep-alive include="HomeView">
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </main>
     <SiteFooter v-if="!isReaderRoute" />
   </div>

@@ -109,9 +109,16 @@
   </section>
 </template>
 
+<script lang="ts">
+export default {
+  name: "HomeView",
+};
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { saveHomeScrollPosition } from "../lib/homeScroll";
 import api from "../lib/api";
 import { trackAnalyticsEvent } from "../lib/analytics";
 import { fetchPublicGenres } from "../lib/publicData";
@@ -239,6 +246,10 @@ const goSearch = () => {
 
   router.push({ name: "search", query: { q: keyword.value || undefined } });
 };
+
+onBeforeRouteLeave(() => {
+  saveHomeScrollPosition();
+});
 
 onMounted(async () => {
   await Promise.all([loadHome(), loadGenres()]);

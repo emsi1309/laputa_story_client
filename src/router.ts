@@ -13,6 +13,7 @@ import AboutView from "./views/AboutView.vue";
 import TranslationRequestView from "./views/TranslationRequestView.vue";
 import AdvertisingContactView from "./views/AdvertisingContactView.vue";
 import { trackPageView } from "./lib/analytics";
+import { HOME_SCROLL_STORAGE_KEY } from "./lib/homeScroll";
 import { updateDocumentSeo } from "./lib/seo";
 
 declare module "vue-router" {
@@ -28,12 +29,29 @@ declare module "vue-router" {
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior(to) {
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition;
+    }
     if (to.hash) {
       return {
         el: to.hash,
         top: 84,
       };
+    }
+
+    if (to.name === "home") {
+      try {
+        const raw = sessionStorage.getItem(HOME_SCROLL_STORAGE_KEY);
+        if (raw != null && raw !== "") {
+          const top = Number(raw);
+          if (!Number.isNaN(top) && top >= 0) {
+            return { left: 0, top };
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
 
     return {
