@@ -71,6 +71,7 @@ export type ReaderData = {
     pageIndex: number;
     imageUrl: string;
     sourceImageUrl: string | null;
+    serverImageUrls?: (string | null)[];
   }[];
   prevChapter: {
     id: number;
@@ -86,6 +87,7 @@ export type ReaderData = {
   } | null;
   defaultImageServer: number;
   imageServerCount: number;
+  availableImageServers?: number[];
   hasServer2Images: boolean;
 };
 

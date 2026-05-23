@@ -22,22 +22,16 @@
         <div class="reader-server-wrap">
           <span>Server ảnh:</span>
           <button
+            v-for="server in imageServerOptions"
+            :key="server"
             type="button"
             class="reader-server-btn"
-            :class="{ active: selectedImageServer === 1 }"
-            @click="setImageServer(1)"
+            :class="{ active: selectedImageServer === server }"
+            :disabled="!serverHasImages(server)"
+            :title="serverHasImages(server) ? `Ảnh từ Server ${server}` : `Chưa có ảnh Server ${server}`"
+            @click="setImageServer(server)"
           >
-            Server 1
-          </button>
-          <button
-            type="button"
-            class="reader-server-btn"
-            :class="{ active: selectedImageServer === 2 }"
-            :disabled="!hasServer2Images"
-            :title="hasServer2Images ? 'Ảnh từ nguồn phụ / merge' : 'Chưa có ảnh Server 2 — crawl nguồn B hoặc merge truyện có chapter'"
-            @click="setImageServer(2)"
-          >
-            Server 2
+            Server {{ server }}
           </button>
         </div>
       </div>
@@ -259,7 +253,7 @@ const auth = useAuthStore();
 const readerData = ref<ReaderData | null>(null);
 const chapterOptions = ref<ChapterBrief[]>([]);
 const selectedChapterSlug = ref("");
-const selectedImageServer = ref<1 | 2>(1);
+const selectedImageServer = ref(1);
 const currentPage = ref(1);
 const imageFallbackMap = ref<Record<number, number>>({});
 const pageImageDimensions = ref<Record<number, { width: number; height: number }>>({});
@@ -288,7 +282,16 @@ const READER_ANALYTICS_ENABLED = true;
 const VIEWED_CHAPTER_TTL_MS = 30 * 60 * 1000;
 const MAX_LOCAL_CHAPTER_ITEMS = 30;
 const MAX_BLOCKED_IMAGE_HOSTS = 40;
-const DEFAULT_PROXY_IMAGE_HOSTS = ["truyenvua.com", "hinhhinh.com", "hinhinh.com", "tintruyen.net"];
+const DEFAULT_PROXY_IMAGE_HOSTS = [
+  "truyenvua.com",
+  "hinhhinh.com",
+  "hinhinh.com",
+  "tintruyen.net",
+  "g5img.top",
+  "admin.manhuavn2.com",
+  "manhuavn2.com",
+  "manhuavn.top",
+];
 const MAX_IMAGE_RETRY_ATTEMPTS = 2;
 /** First N pages load immediately; others wait until near viewport (scroll lazy). */
 const READER_EAGER_PAGE_COUNT = 6;
@@ -323,16 +326,38 @@ type ThreadedCommentItem = CommentItem & {
 
 type ReaderPageItem = ReaderData["pages"][number];
 
-const hasServer2Images = computed(() => {
-  if (readerData.value?.hasServer2Images) {
-    return true;
-  }
-  return Boolean(readerData.value?.pages.some((page) => Boolean(page.sourceImageUrl?.trim())));
-});
-
 const imageServerCount = computed(() => {
   const count = readerData.value?.imageServerCount ?? 0;
-  return Math.max(1, Math.min(2, count));
+  return Math.max(1, count);
+});
+
+const serverHasImages = (server: number) => {
+  const available = readerData.value?.availableImageServers;
+  if (available?.length) {
+    return available.includes(server);
+  }
+
+  if (server === 1) {
+    return Boolean(readerData.value?.pages.some((page) => Boolean(page.imageUrl?.trim() || page.serverImageUrls?.[0]?.trim())));
+  }
+  if (server === 2) {
+    if (readerData.value?.hasServer2Images) {
+      return true;
+    }
+    return Boolean(readerData.value?.pages.some((page) => Boolean(page.sourceImageUrl?.trim() || page.serverImageUrls?.[1]?.trim())));
+  }
+
+  const index = server - 1;
+  return Boolean(
+    readerData.value?.pages.some((page) => Boolean(page.serverImageUrls?.[index]?.trim()))
+  );
+};
+
+const hasServer2Images = computed(() => serverHasImages(2));
+
+const imageServerOptions = computed(() => {
+  const count = imageServerCount.value;
+  return Array.from({ length: count }, (_, index) => index + 1);
 });
 
 const toTimestamp = (value: string) => {
@@ -1094,10 +1119,16 @@ const normalizeServerStoredImageUrl = (rawUrl: string) => {
   }
 };
 
-const normalizeImageServer = (value: number | null | undefined): 1 | 2 => (value === 2 ? 2 : 1);
+const normalizeImageServer = (value: number | null | undefined) => {
+  const server = Number(value);
+  if (!Number.isFinite(server) || server < 1) {
+    return 1;
+  }
+  return Math.min(imageServerCount.value, Math.floor(server));
+};
 
-const setImageServer = (server: 1 | 2) => {
-  if (server === 2 && !hasServer2Images.value) {
+const setImageServer = (server: number) => {
+  if (!serverHasImages(server)) {
     return;
   }
 
@@ -1109,20 +1140,35 @@ const setImageServer = (server: 1 | 2) => {
   imageFallbackMap.value = {};
 };
 
+const resolveRawImageForServer = (page: ReaderPageItem, server: number) => {
+  const index = server - 1;
+  const fromList = page.serverImageUrls?.[index]?.trim();
+  if (fromList) {
+    return fromList;
+  }
+  if (server === 1) {
+    return page.imageUrl?.trim() || "";
+  }
+  if (server === 2) {
+    return page.sourceImageUrl?.trim() || "";
+  }
+  return "";
+};
+
 const resolveImageCandidates = (page: ReaderPageItem) => {
   const candidates: string[] = [];
+  const preferred = normalizeServerStoredImageUrl(resolveRawImageForServer(page, selectedImageServer.value));
+  if (preferred) {
+    candidates.push(preferred);
+  }
 
-  const server1Raw = normalizeServerStoredImageUrl(page.imageUrl);
-  const sourceRaw = page.sourceImageUrl?.trim() || "";
-  const server2Raw = sourceRaw ? normalizeServerStoredImageUrl(sourceRaw) : "";
-
-  const ordered = selectedImageServer.value === 2
-    ? [server2Raw, server1Raw]
-    : [server1Raw, server2Raw];
-
-  for (const candidate of ordered) {
-    if (candidate && !candidates.includes(candidate)) {
-      candidates.push(candidate);
+  for (let server = 1; server <= imageServerCount.value; server += 1) {
+    if (server === selectedImageServer.value) {
+      continue;
+    }
+    const fallback = normalizeServerStoredImageUrl(resolveRawImageForServer(page, server));
+    if (fallback && !candidates.includes(fallback)) {
+      candidates.push(fallback);
     }
   }
 
@@ -1958,11 +2004,14 @@ const loadReader = async () => {
     saveCachedReader(comicSlug, chapterSlug, data);
   }
 
-  const backendDefaultServer = normalizeImageServer(data.defaultImageServer);
-  const hasSecondarySource = data.pages.some((page) => Boolean(page.sourceImageUrl?.trim()));
-  selectedImageServer.value = backendDefaultServer === 2 && hasSecondarySource ? 2 : 1;
-
   readerData.value = data;
+  const serverCount = Math.max(1, data.imageServerCount ?? 1);
+  const backendDefaultServer = Math.min(serverCount, Math.max(1, data.defaultImageServer ?? 1));
+  const preferredServer = data.availableImageServers?.includes(backendDefaultServer)
+    ? backendDefaultServer
+    : data.availableImageServers?.[0] ?? 1;
+  selectedImageServer.value = serverHasImages(preferredServer) ? preferredServer : 1;
+
   selectedChapterSlug.value = data.chapter.slug;
   seedReaderLazyLoadedPages();
   loadStoredPageImageDimensions();
