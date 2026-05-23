@@ -25,6 +25,8 @@
 
     <p class="search-info" v-if="query">Kết quả cho từ khóa: "{{ query }}"</p>
 
+    <PaginationControl :page="page" :total-pages="0" :has-next="hasNextPage" @change="changePage" />
+
     <div class="comic-grid">
       <ComicCardItem
         v-for="comic in comics"
@@ -33,8 +35,6 @@
         analytics-context="search_results"
       />
     </div>
-
-    <PaginationControl :page="page" :total-pages="0" :has-next="hasNextPage" @change="changePage" />
   </section>
 </template>
 

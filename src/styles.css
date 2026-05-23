@@ -1053,7 +1053,8 @@ a {
 }
 
 .pagination-wrap {
-  margin-top: 14px;
+  margin-top: 0;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
