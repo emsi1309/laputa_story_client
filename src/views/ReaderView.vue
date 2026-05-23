@@ -34,6 +34,7 @@
             class="reader-server-btn"
             :class="{ active: selectedImageServer === 2 }"
             :disabled="!hasServer2Images"
+            :title="hasServer2Images ? 'Ảnh từ nguồn phụ / merge' : 'Chưa có ảnh Server 2 — crawl nguồn B hoặc merge truyện có chapter'"
             @click="setImageServer(2)"
           >
             Server 2
@@ -322,9 +323,17 @@ type ThreadedCommentItem = CommentItem & {
 
 type ReaderPageItem = ReaderData["pages"][number];
 
-const hasServer2Images = computed(() =>
-  Boolean(readerData.value?.pages.some((page) => Boolean(page.sourceImageUrl?.trim())))
-);
+const hasServer2Images = computed(() => {
+  if (readerData.value?.hasServer2Images) {
+    return true;
+  }
+  return Boolean(readerData.value?.pages.some((page) => Boolean(page.sourceImageUrl?.trim())));
+});
+
+const imageServerCount = computed(() => {
+  const count = readerData.value?.imageServerCount ?? 0;
+  return Math.max(1, Math.min(2, count));
+});
 
 const toTimestamp = (value: string) => {
   const time = new Date(value).getTime();

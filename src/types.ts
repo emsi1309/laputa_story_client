@@ -85,6 +85,8 @@ export type ReaderData = {
     number: number | null;
   } | null;
   defaultImageServer: number;
+  imageServerCount: number;
+  hasServer2Images: boolean;
 };
 
 export type CommentItem = {
