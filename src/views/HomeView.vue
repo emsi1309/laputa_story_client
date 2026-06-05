@@ -27,6 +27,10 @@
   </section>
 
   <section class="container section-block">
+    <AdBanner />
+  </section>
+
+  <section class="container section-block">
     <div class="section-head">
       <h2 class="section-title">Top truyện tuần</h2>
     </div>
@@ -124,6 +128,7 @@ import { trackAnalyticsEvent } from "../lib/analytics";
 import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
+import AdBanner from "../components/AdBanner.vue";
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
 type HomePayload = {
   latestUpdated?: ComicCard[];

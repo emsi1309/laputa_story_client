@@ -71,9 +71,11 @@
             <button class="secondary-btn" type="button" @click="submitReport">Gửi báo cáo</button>
           </div>
         </div>
+
+        
       </div>
     </div>
-
+    <AdBanner />
     <article class="detail-description-block">
       <div class="section-head" style="margin-bottom: 10px;">
         <h2>Mô tả truyện</h2>
@@ -189,6 +191,7 @@ import api from "../lib/api";
 import { resolvePublicImageUrl } from "../lib/image";
 import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
+import AdBanner from "../components/AdBanner.vue";
 import type { CommentItem, ComicDetail, FavoriteState, UserRating } from "../types";
 
 const route = useRoute();

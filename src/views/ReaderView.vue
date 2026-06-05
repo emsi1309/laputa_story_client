@@ -104,6 +104,8 @@
       </router-link>
     </div>
 
+    <AdBanner />
+
     <article class="social-card" style="margin-top: 14px;">
       <div class="section-head" style="margin-bottom: 10px;">
         <h2>Bình luận chương</h2>
@@ -244,6 +246,7 @@ import { trackAnalyticsEvent } from "../lib/analytics";
 import { getApiBaseUrl, getMediaBaseUrl } from "../lib/runtimeConfig";
 import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
+import AdBanner from "../components/AdBanner.vue";
 import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
 
 const route = useRoute();
