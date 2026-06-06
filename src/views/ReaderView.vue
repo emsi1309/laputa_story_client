@@ -56,6 +56,7 @@
         </router-link>
       </div>
     </div>
+    <AdBanner />
 
     <div
       class="reader-pages"
@@ -104,7 +105,7 @@
       </router-link>
     </div>
 
-    <AdBanner />
+
 
     <article class="social-card" style="margin-top: 14px;">
       <div class="section-head" style="margin-bottom: 10px;">
