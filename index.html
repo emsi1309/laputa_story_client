@@ -54,25 +54,8 @@
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
 
-    <!-- Social Bar - Push notification widget, auto-refresh every 60s -->
-    <script>
-      (function() {
-        var SOCIAL_BAR_SRC = "https://pl30207224.effectivecpmnetwork.com/8b/7f/fd/8b7ffdb4ddbe3f67a7bbd265433413d5.js";
-        var REFRESH_INTERVAL = 60000; // 1 phút
-
-        function loadSocialBar() {
-          var existing = document.getElementById("social-bar-ad");
-          if (existing) existing.remove();
-          var s = document.createElement("script");
-          s.id = "social-bar-ad";
-          s.src = SOCIAL_BAR_SRC;
-          document.body.appendChild(s);
-        }
-
-        loadSocialBar();
-        setInterval(loadSocialBar, REFRESH_INTERVAL);
-      })();
-    </script>
+    <!-- Social Bar - Push notification widget -->
+    <script src="https://pl30207224.effectivecpmnetwork.com/8b/7f/fd/8b7ffdb4ddbe3f67a7bbd265433413d5.js"></script>
 
     <!-- Popunder - Để script Adsterra tự xử lý popunder, tối đa 1 lần/giờ -->
     <script>
