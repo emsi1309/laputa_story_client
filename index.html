@@ -53,5 +53,54 @@
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
+
+    <!-- Social Bar - Push notification widget, auto-refresh every 60s -->
+    <script>
+      (function() {
+        var SOCIAL_BAR_SRC = "https://pl30207224.effectivecpmnetwork.com/8b/7f/fd/8b7ffdb4ddbe3f67a7bbd265433413d5.js";
+        var REFRESH_INTERVAL = 60000; // 1 phút
+
+        function loadSocialBar() {
+          var existing = document.getElementById("social-bar-ad");
+          if (existing) existing.remove();
+          var s = document.createElement("script");
+          s.id = "social-bar-ad";
+          s.src = SOCIAL_BAR_SRC;
+          document.body.appendChild(s);
+        }
+
+        loadSocialBar();
+        setInterval(loadSocialBar, REFRESH_INTERVAL);
+      })();
+    </script>
+
+    <!-- Popunder - Mở tab ngầm khi click, tối đa 1 lần/giờ -->
+    <script>
+      (function() {
+        var POPUNDER_SRC = "https://pl30207229.effectivecpmnetwork.com/88/46/d6/8846d6ae9ee2d746eb13f8a5e42f7e92.js";
+        var COOLDOWN_KEY = "popunder_last";
+        var COOLDOWN_MS = 3600000; // 1 giờ
+
+        function isPopunderAllowed() {
+          var last = localStorage.getItem(COOLDOWN_KEY);
+          if (!last) return true;
+          return (Date.now() - parseInt(last, 10)) >= COOLDOWN_MS;
+        }
+
+        function markPopunderDone() {
+          localStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+        }
+
+        function triggerPopunder() {
+          if (!isPopunderAllowed()) return;
+          markPopunderDone();
+          var s = document.createElement("script");
+          s.src = POPUNDER_SRC;
+          document.body.appendChild(s);
+        }
+
+        document.addEventListener("click", triggerPopunder, { once: false });
+      })();
+    </script>
   </body>
 </html>
