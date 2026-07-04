@@ -74,37 +74,29 @@
       })();
     </script>
 
-    <!-- Popunder - Mở tab ngầm (không chuyển focus), tối đa 1 lần/giờ -->
+    <!-- Popunder - Để script Adsterra tự xử lý popunder, tối đa 1 lần/giờ -->
     <script>
       (function() {
         var POPUNDER_SRC = "https://pl30207229.effectivecpmnetwork.com/88/46/d6/8846d6ae9ee2d746eb13f8a5e42f7e92.js";
         var COOLDOWN_KEY = "popunder_last";
-        var COOLDOWN_MS = 3600000; // 1 giờ
+        var COOLDOWN_MS = 3600000;
 
-        function isPopunderAllowed() {
+        function isAllowed() {
           var last = localStorage.getItem(COOLDOWN_KEY);
           if (!last) return true;
           return (Date.now() - parseInt(last, 10)) >= COOLDOWN_MS;
         }
 
-        function markPopunderDone() {
+        function markDone() {
           localStorage.setItem(COOLDOWN_KEY, String(Date.now()));
         }
 
-        function triggerPopunder(e) {
-          if (!isPopunderAllowed()) return;
-          markPopunderDone();
-
-          // Mở tab trống, focus lại trang hiện tại, rồi inject script vào tab mới
-          var popup = window.open("", "_blank");
-          if (popup) {
-            window.focus();
-            var doc = popup.document;
-            doc.write('<!DOCTYPE html><html><head></head><body>');
-            doc.write('<script src="' + POPUNDER_SRC + '"><\/script>');
-            doc.write('</body></html>');
-            doc.close();
-          }
+        function triggerPopunder() {
+          if (!isAllowed()) return;
+          markDone();
+          var s = document.createElement("script");
+          s.src = POPUNDER_SRC;
+          document.body.appendChild(s);
         }
 
         document.addEventListener("click", triggerPopunder);
