@@ -104,7 +104,7 @@
       </router-link>
     </div>
 
-    <AdBanner />
+    <!-- <AdBanner /> -->
 
     <article class="social-card" style="margin-top: 14px;">
       <div class="section-head" style="margin-bottom: 10px;">
@@ -246,7 +246,7 @@ import { trackAnalyticsEvent } from "../lib/analytics";
 import { getApiBaseUrl, getMediaBaseUrl } from "../lib/runtimeConfig";
 import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
-import AdBanner from "../components/AdBanner.vue";
+// import AdBanner from "../components/AdBanner.vue"; // Quảng cáo đã tắt tạm thời
 import type { ChapterBrief, CommentItem, ComicDetail, ReaderData } from "../types";
 
 const route = useRoute();

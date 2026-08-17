@@ -26,9 +26,9 @@
     </div>
   </section>
 
-  <section class="container section-block">
+  <!-- <section class="container section-block">
     <AdBanner />
-  </section>
+  </section> -->
 
   <section class="container section-block">
     <div class="section-head">
@@ -128,7 +128,7 @@ import { trackAnalyticsEvent } from "../lib/analytics";
 import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
-import AdBanner from "../components/AdBanner.vue";
+// import AdBanner from "../components/AdBanner.vue"; // Quảng cáo đã tắt tạm thời
 import HorizontalComicRow from "../components/HorizontalComicRow.vue";
 type HomePayload = {
   latestUpdated?: ComicCard[];

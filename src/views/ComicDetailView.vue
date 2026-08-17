@@ -191,7 +191,7 @@ import api from "../lib/api";
 import { resolvePublicImageUrl } from "../lib/image";
 import { updateDocumentSeo } from "../lib/seo";
 import { useAuthStore } from "../stores/auth";
-import AdBanner from "../components/AdBanner.vue";
+// import AdBanner from "../components/AdBanner.vue"; // Quảng cáo đã tắt tạm thời
 import type { CommentItem, ComicDetail, FavoriteState, UserRating } from "../types";
 
 const route = useRoute();

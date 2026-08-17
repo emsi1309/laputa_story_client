@@ -25,7 +25,7 @@
 
     <p class="search-info" v-if="query">Kết quả cho từ khóa: "{{ query }}"</p>
 
-    <AdBanner />
+    <!-- <AdBanner /> -->
 
     <PaginationControl :page="page" :total-pages="0" :has-next="hasNextPage" @change="changePage" />
 
@@ -49,7 +49,7 @@ import { fetchPublicGenres } from "../lib/publicData";
 import type { ComicCard, GenreItem } from "../types";
 import ComicCardItem from "../components/ComicCard.vue";
 import PaginationControl from "../components/PaginationControl.vue";
-import AdBanner from "../components/AdBanner.vue";
+// import AdBanner from "../components/AdBanner.vue"; // Quảng cáo đã tắt tạm thời
 
 const route = useRoute();
 const router = useRouter();
